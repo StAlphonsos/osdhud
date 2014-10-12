@@ -1,0 +1,222 @@
+/* -*- mode:c; c-basic-offset:4; tab-width:4; indent-tabs-mode:nil -*- */
+
+/**
+ * @file osdhud.h
+ * @brief common definitions for osdhud source code files
+ */
+
+/* LICENSE:
+ *
+ * Copyright (C) 1999-2014 by attila <attila@stalphonsos.com>
+ *
+ * Permission to use, copy, modify, and/or distribute this software for
+ * any purpose with or without fee is hereby granted, provided that the
+ * above copyright notice and this permission notice appear in all
+ * copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+ * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+ * AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+ * DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+ * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+ * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+ * PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#ifndef __osdhud_h__
+# define __osdhud_h__
+
+#include <assert.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/stdint.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <syslog.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <time.h>
+#include <sys/resource.h>
+#include <sys/select.h>
+
+#ifdef __FreeBSD__
+# define HAVE_SETPROCTITLE 1
+#endif
+
+#ifdef __OpenBSD__
+
+# define HAVE_SETPROCTITLE 1
+#endif
+
+#include <sys/socket.h>
+#include <net/if.h>
+#include <sys/un.h>
+
+#include <xosd.h>
+
+#define VERSION "0.1.0"
+#define PURPOSE "minmalist heads-up display"
+
+#if __amd64__                           /* XXX check size */
+# define SIZEOF_F "%ld"
+#else
+# define SIZEOF_F "%d"
+#endif
+#define SIZE_T_F SIZEOF_F
+
+#define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))
+#define NULLS(_x_) ((_x_) ? (_x_) : "NULL")
+
+/* Compile-time options that are really only for development */
+/*#define CREATE_EACH_TIME 1*/
+#define USE_TWO_OSDS 1/**/
+
+struct movavg {
+    int                 window_size;
+    int                 off;
+    int                 count;
+    float               sum;
+    float              *window;
+};
+
+typedef struct osdhud_state {
+    int                 kill_server:1;
+    int                 down_hud:1;
+    int                 up_hud:1;
+    int                 stick_hud:1;
+    int                 unstick_hud:1;
+    int                 foreground:1;
+    int                 hud_is_up:1;
+    int                 server_quit:1;
+    int                 stuck:1;
+    int                 debug:1;
+    int                 countdown:1;
+    int                 quiet_at_start:1;
+    char               *argv0;
+    int                 pid;
+    char               *sock_path;
+    struct sockaddr_un  addr;
+    int                 sock_fd;
+    char               *font;
+    char               *net_iface;
+    char               *time_fmt;
+    unsigned long       net_tot_ipax;
+    unsigned long       net_tot_ierr;
+    unsigned long       net_tot_opax;
+    unsigned long       net_tot_oerr;
+    unsigned long       net_tot_ibytes;
+    unsigned long       net_tot_obytes;
+    int                 delta_t;
+    int                 pos_x;
+    int                 pos_y;
+    int                 nlines;
+    int                 width;
+    int                 display_msecs;
+    int                 duration_msecs;
+    int                 t0_msecs;
+    int                 short_pause_msecs;
+    int                 long_pause_msecs;
+    int                 net_movavg_wsize;
+    int                 verbose;
+    float               load_avg;
+    struct movavg      *net_kbps;
+    struct movavg      *net_pxps;
+    float               mem_used_percent;
+    float               swap_used_percent;
+    int                 battery_life;
+    int                 battery_life_avail:1;
+    int                 battery_state;
+    int                 battery_state_avail:1;
+    int                 battery_time;
+    int                 battery_time_avail:1;
+    unsigned long       uptime_secs;
+    unsigned long       last_t;
+    unsigned long       first_t;
+    xosd               *osd;
+    int                 disp_line;
+#ifdef USE_TWO_OSDS
+    xosd               *osd2;
+#endif
+    char                errbuf[1024];
+} osdhud_state_t;
+
+#define KILO 1000
+
+#define OSDHUD_MAX_MSG_SIZE 2048
+
+#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
+#define DEFAULT_POS_X 10
+#define DEFAULT_POS_Y 48
+#define DEFAULT_NLINES 15
+#define DEFAULT_WIDTH 50
+#define DEFAULT_DISPLAY 4000
+#define DEFAULT_SHORT_PAUSE 300
+#define DEFAULT_LONG_PAUSE 1800
+#define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
+#define DEFAULT_NET_MOVAVG_WSIZE 300   /* granularity = SHORT_PAUSE */
+
+#define DBG1(fmt,arg1)                                                  \
+    if (state->debug) {                                                 \
+        if (state->foreground)                                          \
+            printf(fmt,arg1);                                           \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,arg1);                               \
+    }
+
+#define DBG2(fmt,arg1,arg2)                                             \
+    if (state->debug) {                                                 \
+        if (state->foreground)                                          \
+            printf(fmt,arg1,arg2);                                      \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,arg1,arg2);                          \
+    }
+
+#define SPEW(fmt,mem)                                                   \
+    if (state->verbose) {                                               \
+        if (state->foreground)                                          \
+            printf(fmt,state->mem);                                     \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,state->mem);                         \
+    }
+
+#define SPEWE(msg)                                                      \
+    if (state->verbose) {                                               \
+        if (state->foreground)                                          \
+            perror(msg);                                                \
+        else                                                            \
+            syslog(LOG_ERR,"%s",msg);                                   \
+    }
+
+/* shared across operating systems */
+void update_net_statistics(
+    osdhud_state_t     *state,
+    unsigned long       delta_bytes,
+    unsigned long       delta_pax);
+
+/*
+ * probe_xxx() function prototypes
+ */
+
+void probe_init(
+    void);
+void probe_load(
+    osdhud_state_t     *state);
+void probe_mem(
+    osdhud_state_t     *state);
+void probe_swap(
+    osdhud_state_t     *state);
+void probe_net(
+    osdhud_state_t     *state);
+void probe_battery(
+    osdhud_state_t     *state);
+void probe_uptime(
+    osdhud_state_t     *state);
+
+#endif /* __osdhud_h__ */

@@ -1,0 +1,59 @@
+# -*- makefile -*-
+##
+# only make-variant-agnostic constructs should be used in this file
+##+
+# The following targets are useful:
+#     help              produce this message
+#     all               build stuff
+#     install           install everything but desktop into $(PREFIX)
+#     clean             clean up temp files
+#     distclean         clean + reset to virgin state
+#     dist              cook dist-version.tar.gz tarball
+##-
+
+BINARIES=osdhud
+
+MAKESYS?=GNUmakefile BSDmakefile _makefile bsd gnu generic
+SUDIRS?=
+FILES?=osdhud.c $(UNAME).c
+DIST_NAME?=$(PACKAGE_NAME)
+DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
+DIST_LIST?=PACKAGE VERSION $(MAKESYS) $(SUBDIRS) $(FILES)
+DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
+DIST_TAR_GZ?=$(DIST_TAR).gz
+
+default:: help
+
+help::
+	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < _makefile
+
+all:: $(BINARIES)
+
+osdhud: osdhud.o $(UNAME).o
+	$(CC) $(LDFLAGS) -o $@ osdhud.o $(UNAME).o $(LIBS)
+
+osdhud.o: osdhud.c osdhud.h
+
+$(UNAME).o: $(UNAME).c osdhud.h
+
+.c.o:
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+clean::
+	$(RM) -f osdhud.o osdhud
+
+distclean:: clean
+	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ)
+	$(RM) -rf $(DIST_TMP)
+
+dist: distclean $(DIST_TAR_GZ)
+
+$(DIST_TAR): $(DIST_TMP)
+	$(TAR_CF) $(DIST_TAR) $(DIST_TMP)
+
+$(DIST_TAR_GZ): $(DIST_TAR)
+	$(GZIP) $(DIST_TAR)
+
+$(DIST_TMP):
+	$(MKDIR) -p $(DIST_TMP)
+	($(TAR_CF) - $(DIST_LIST)) | (cd $(DIST_TMP); $(TAR_XF) -)

@@ -13,12 +13,12 @@
 
 BINARIES=osdhud
 
-MAKESYS?=GNUmakefile BSDmakefile _makefile bsd gnu generic
+MAKESYS?=build.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
 SUDIRS?=
 FILES?=osdhud.c $(UNAME).c
 DIST_NAME?=$(PACKAGE_NAME)
 DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
-DIST_LIST?=PACKAGE VERSION $(MAKESYS) $(SUBDIRS) $(FILES)
+DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
 DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
 
@@ -33,6 +33,9 @@ osdhud: osdhud.o $(UNAME).o
 	$(CC) $(LDFLAGS) -o $@ osdhud.o $(UNAME).o $(LIBS)
 
 osdhud.o: osdhud.c osdhud.h
+osdhud.h: version.h
+version.h: version.h.in
+	$(SUSS) -file=version.h VERSION=${VERSION}
 
 $(UNAME).o: $(UNAME).c osdhud.h
 
@@ -40,7 +43,7 @@ $(UNAME).o: $(UNAME).c osdhud.h
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 clean::
-	$(RM) -f osdhud.o osdhud
+	$(RM) -f osdhud.o $(UNAME).o osdhud version.h
 
 distclean:: clean
 	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ)

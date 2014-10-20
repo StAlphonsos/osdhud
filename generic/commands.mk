@@ -10,3 +10,4 @@ TAR_XF?=$(TAR) xf
 GZIP?=gzip
 MKDIR?=mkdir
 MKDIR_P?=$(MKDIR) -p
+SUSS?=$(S)/generic/suss.pl

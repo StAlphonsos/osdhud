@@ -51,7 +51,6 @@
 #endif
 
 #ifdef __OpenBSD__
-
 # define HAVE_SETPROCTITLE 1
 #endif
 
@@ -61,7 +60,7 @@
 
 #include <xosd.h>
 
-#define VERSION "0.1.0"
+#include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
 #if __amd64__                           /* XXX check size */

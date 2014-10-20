@@ -1,11 +1,12 @@
-osdhud - minimalist heads-up display based on xosd
-==================================================
+# osdhud - minimalist heads-up display based on xosd
 
 osdhud is a heads-up display (hud) for X windows.  It uses the xosd
-library to draw its display over everything else and is designed to
-be trivial to integrate into whatever desktop environment you use.
-That much said, I use [cwm](https://en.wikipedia.org/wiki/Cwm_%28window_manager%29) under [OpenBSD](http://www.openbsd.org) and find it meshes
-perfectly with the minimalist desktop.
+library to draw its display over everything else and is designed to be
+trivial to integrate into whatever desktop environment you use.  That
+much said, I use
+[cwm](https://en.wikipedia.org/wiki/Cwm_%28window_manager%29) under
+[OpenBSD](http://www.openbsd.org) and find it meshes perfectly with
+the minimalist desktop.
 
 From the source code:
 
@@ -28,8 +29,11 @@ bringing up the display use the `-n` option; this can be useful in
 your `~/.xinitrc` or similar script if you don't want the HUD to flash
 for a few seconds when you start X windows.
 
-Building and Installing
------------------------
+## Building and Installing
 
-Usage
------
+Use the build.sh script in the top-level directory to invoke make.  It
+either uses -f BSDmakefile or -f GNUmakefile depending on what the
+native make command says.
+
+## Usage
+

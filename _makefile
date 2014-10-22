@@ -1,6 +1,9 @@
 # -*- makefile -*-
 ##
-# only make-variant-agnostic constructs should be used in this file
+# make-variant-agnostic makefile invoked by both BSD and GNU make.
+# no non-agnostic constructs should be in this file.
+#
+# the text between ##+ and ##- is spit out by the "help" target:
 ##+
 # The following targets are useful:
 #     help              produce this message
@@ -21,11 +24,16 @@ DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
 DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
 DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
+DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc
 
 default:: help
 
 help::
 	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < _makefile
+
+	@$(ECHO) Install prefix: $(PREFIX) '(override with PREFIX=... on command-line)'
+	@$(ECHO) '    bin dir: ' $(BINDIR)
+	@$(ECHO) '    man dir: ' $(MANDIR)
 
 all:: $(BINARIES)
 
@@ -34,7 +42,7 @@ osdhud: osdhud.o $(UNAME).o
 
 osdhud.o: osdhud.c osdhud.h
 osdhud.h: version.h
-version.h: version.h.in
+version.h: version.h.in VERSION
 	$(SUSS) -file=version.h VERSION=${VERSION}
 
 $(UNAME).o: $(UNAME).c osdhud.h
@@ -42,8 +50,11 @@ $(UNAME).o: $(UNAME).c osdhud.h
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
 
+install:: $(BINARIES)
+	$(INSTALL_X) $(BINARIES) $(BINDIR)
+
 clean::
-	$(RM) -f osdhud.o $(UNAME).o osdhud version.h
+	$(RM) -f osdhud.o $(UNAME).o osdhud version.h $(DOC_EPHEM)
 
 distclean:: clean
 	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ)

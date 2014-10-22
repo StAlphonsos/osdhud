@@ -11,3 +11,6 @@ GZIP?=gzip
 MKDIR?=mkdir
 MKDIR_P?=$(MKDIR) -p
 SUSS?=$(S)/generic/suss.pl
+INSTALL?=install
+INSTALL_X?=$(INSTALL)
+INSTALL_D?=$(INSTALL) -d

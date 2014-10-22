@@ -6,7 +6,6 @@
 .include "$(S)/generic/settings.mk"
 
 VERSION!=cat $(S)/VERSION
-
 UNAME!=uname | tr A-Z a-z
 
 .if "${UNAME}" == "openbsd"

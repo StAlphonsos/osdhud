@@ -91,7 +91,7 @@ float movavg_add(
     struct movavg      *ma,
     float               val)
 {
-    float val = 0;
+    float result = 0;
 
     if (ma) {
         if (ma->count < ma->window_size)
@@ -102,9 +102,9 @@ float movavg_add(
         }
         ma->sum += val;
         ma->window[ma->off++] = val;
-        val = ma->sum / ma->count;
+        result = ma->sum / ma->count;
     }
-    return val;
+    return result;
 }
 
 /*
@@ -133,23 +133,32 @@ static void die(
 
 void update_net_statistics(
     osdhud_state_t     *state,
-    unsigned long       delta_bytes,
-    unsigned long       delta_pax)
+    unsigned long       delta_ibytes,
+    unsigned long       delta_obytes,
+    unsigned long       delta_ipax,
+    unsigned long       delta_opax)
 {
     if (state->delta_t) {
         float dt = (float)state->delta_t;
 
-        state->net_kbps = (movavg_add(state->kbps_ma,delta_bytes) / dt) * KILO;
-        state->net_pxps = movavg_add(state->pxps_ma,delta_pax) / dt;
+        state->net_ikbps = (movavg_add(state->ikbps_ma,delta_ibytes)/dt)/KILO;
+        state->net_okbps = (movavg_add(state->okbps_ma,delta_obytes)/dt)/KILO;
+        state->net_ipxps = movavg_add(state->ipxps_ma,delta_ipax) / dt;
+        state->net_opxps = movavg_add(state->opxps_ma,delta_opax) / dt;
     }
 }
 
 static void clear_net_statistics(
     osdhud_state_t     *state)
 {
-    state->net_kbps = state->net_pxps = 0;
-    movavg_clear(state->kbps_ma);
-    movavg_clear(state->pxps_ma);
+    state->net_ikbps = state->net_ipxps =
+        state->net_okbps = state->net_opxps = 0;
+    state->net_tot_ibytes = state->net_tot_obytes =
+        state->net_tot_ipax = state->net_tot_opax = 0;
+    movavg_clear(state->ikbps_ma);
+    movavg_clear(state->okbps_ma);
+    movavg_clear(state->ipxps_ma);
+    movavg_clear(state->opxps_ma);
 }
 
 static unsigned long time_in_microseconds(
@@ -200,7 +209,6 @@ static void probe(
 static void display_load(
     osdhud_state_t     *state)
 {
-    SPEW("load avg: %.2f\n",load_avg);
     xosd_display(
         state->osd,state->disp_line++,
         XOSD_printf,"load: %.2f",state->load_avg
@@ -212,7 +220,6 @@ static void display_mem(
 {
     int percent = (int)(100 * state->mem_used_percent);
 
-    SPEW("mem used: %f\n",mem_used_percent);
     xosd_display(
         state->osd,state->disp_line++,
         XOSD_printf,"mem: %d%%",percent
@@ -228,31 +235,30 @@ static void display_swap(
 {
     int percent = (int)(100 * state->swap_used_percent);
 
-    SPEW("swap used: %f\n",swap_used_percent);
+    if (!state->nswap)
+        return;
     xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"swap: %d%%",percent
+        state->osd,state->disp_line++,XOSD_printf,"swap: %d%%",percent
     );
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_percentage,percent
-    );
+    xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
 }
 
 static void display_net(
     osdhud_state_t     *state)
 {
     char *label = state->net_iface? state->net_iface: "net";
+    float net_kbps = state->net_ikbps + state->net_okbps;
+    float net_pxps = state->net_ipxps + state->net_opxps;
 
-    SPEW("net kbps: %f\n",state->net_kbps);
     xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,"%s: %f kB/sec",
-        label,state->net_kbps
+        state->osd,state->disp_line++,XOSD_printf,
+        "%s kB/sec: %.2f in + %.2f out = %.2f total",
+        label,state->net_ikbps,state->net_okbps,net_kbps
     );
-    SPEW("net pxps: %f\n",state->net_pxps);
     xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,"%s: %f pax/sec",
-        label,state->net_pxps
+        state->osd,state->disp_line++,XOSD_printf,
+        "%s pax/sec: %.2f in + %.2f out = %.2f total",
+        label,state->net_ipxps,state->net_opxps,net_pxps
     );
 }
 
@@ -264,6 +270,45 @@ static void display_battery(
 static void display_uptime(
     osdhud_state_t     *state)
 {
+    if (state->sys_uptime) {
+        unsigned long secs = state->sys_uptime;
+        unsigned long days;
+        unsigned long hours;
+        unsigned long mins;
+        char upbuf[1024] = { 0 };
+        size_t nleft = sizeof(upbuf);
+        size_t off = 0;
+
+        days = secs / SECSPERDAY;
+        secs %= SECSPERDAY;
+        hours = secs / SECSPERHOUR;
+        secs %= SECSPERHOUR;
+        mins = secs / SECSPERMIN;
+        secs %= SECSPERMIN;
+
+#define catsup(var)                                                     \
+        if (var) {                                                      \
+            size_t _catsup_n;                                           \
+            if (off) {                                                  \
+                assert(nleft > 2);                                      \
+                strlcat(&upbuf[off]," ",nleft);                         \
+                nleft -= 1;                                             \
+                off += 1;                                               \
+            }                                                           \
+            _catsup_n = snprintf(&upbuf[off],nleft,"%lu " #var,var);    \
+            assert(_catsup_n < nleft);                                  \
+            off += _catsup_n;                                           \
+            nleft -= _catsup_n;                                         \
+        }
+
+        catsup(days);
+        catsup(hours);
+        catsup(mins);
+        catsup(secs);
+#undef catsup
+
+        xosd_display(state->osd,state->disp_line++,XOSD_printf,"up %s",upbuf);
+    }
 }
 
 static void display_hudmeta(
@@ -348,14 +393,14 @@ static void display(
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCh?"
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwh?"
 
-#define USAGE_MSG "usage: %s [-vkFDUSNh?] [-d msec] [-p msec] [-P msec]\n\
+#define USAGE_MSG "usage: %s [-vkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
        -v verbose | -k kill server | -F run in foreground\n\
        -D down hud | -U up hud | -S stick hud | -N unstick hud\n\
        -n don't display at startup | -C display hud countdown\n\
-                        -h,-? display this\n\
+               -w don't show swap | -h,-? display this\n\
        -T fmt   show time using strftime fmt (def: yyyy-mm-dd HH:MM:SS)\n\
        -d msec  leave hud visible for millis (def: 2000)\n\
        -p msec  millis between sampling when hud is up (def: 100)\n\
@@ -471,6 +516,10 @@ static int parse(
             state->countdown = 1;
             DBG1("parsed -%c",ch);
             break;
+        case 'w':
+            state->nswap = 0;
+            DBG1("parsed -%c",ch);
+            break;
         case 'n':
             state->quiet_at_start = 1;
             DBG1("parsed -%c",ch);
@@ -502,7 +551,8 @@ static void init_state(
     }
     state->kill_server = state->down_hud = state->up_hud = state->countdown =
         state->stick_hud = state->unstick_hud = state->foreground =
-        state->hud_is_up = state->server_quit = state->stuck = 0;
+        state->hud_is_up = state->server_quit = state->stuck = state->verbose =
+        state->debug = 0;
     state->pid = 0;
     state->sock_fd = -1;
     state->sock_path = NULL;
@@ -522,12 +572,16 @@ static void init_state(
     state->width = DEFAULT_WIDTH;
     state->display_msecs = DEFAULT_DISPLAY;
     state->t0_msecs = 0;
+    state->nswap = DEFAULT_NSWAP;
     state->short_pause_msecs = DEFAULT_SHORT_PAUSE;
     state->long_pause_msecs = DEFAULT_LONG_PAUSE;
-    state->net_movavg_wsaize = DEFAULT_NET_MOVAVG_WSIZE;
+    state->net_movavg_wsize = DEFAULT_NET_MOVAVG_WSIZE;
     state->load_avg = state->mem_used_percent = state->swap_used_percent = 0;
-    state->net_kbps = state->net_pxps = 0;
-    state->kbps_ma = state->pxps_ma = NULL;
+    state->per_os_data = NULL;
+    state->net_ikbps = state->net_ipxps =
+        state->net_okbps = state->net_opxps = 0;
+    state->ikbps_ma = state->ipxps_ma =
+        state->okbps_ma = state->opxps_ma = NULL;
     state->battery_life = 0;
     state->battery_life_avail = 0;
     state->battery_state = 0;
@@ -536,6 +590,7 @@ static void init_state(
     state->battery_time_avail = 0;
     state->last_t = 0;
     state->first_t = 0;
+    state->sys_uptime = 0;
     state->osd = NULL;
 #ifdef USE_TWO_OSDS
     state->osd2 = NULL;
@@ -602,6 +657,7 @@ static void cleanup_state(
             xosd_destroy(state->osd2);
 #endif
         }
+        probe_cleanup(state);
         if (state->time_fmt) {
             free(state->time_fmt);
             state->time_fmt = NULL;
@@ -612,10 +668,14 @@ static void cleanup_state(
         state->font = NULL;
         free(state->net_iface);
         state->net_iface = NULL;
-        movavg_free(state->kbps_ma);
-        state->kbps_ma = NULL;
-        movavg_free(state->pxps_ma);
-        state->pxps_ma = NULL;
+        movavg_free(state->ikbps_ma);
+        state->ikbps_ma = NULL;
+        movavg_free(state->okbps_ma);
+        state->okbps_ma = NULL;
+        movavg_free(state->ipxps_ma);
+        state->ipxps_ma = NULL;
+        movavg_free(state->opxps_ma);
+        state->opxps_ma = NULL;
     }
 }
 
@@ -901,7 +961,7 @@ static int check(
     int pause_msecs = state->hud_is_up ? state->short_pause_msecs :
         state->long_pause_msecs;
 
-    if (state->verbose)
+    if (state->verbose > 1)
         syslog(
             LOG_WARNING,"check: pause is %d, HUD is %s",
             pause_msecs,state->hud_is_up ? "UP": "DOWN"
@@ -1202,7 +1262,7 @@ static void hud_up(
 {
     char *font = state->font ? state->font : DEFAULT_FONT;
 
-    if (state->verbose)
+    if (state->verbose > 1)
         syslog(LOG_WARNING,"HUD coming up, osd @ %p",state->osd);
 
 #ifdef CREATE_EACH_TIME
@@ -1339,10 +1399,12 @@ static void setup_daemon(
     init_signals(state);
 
     state->last_t = state->first_t = time_in_milliseconds();
-    state->kbps_ma = movavg_new(state->net_movavg_wsize);
-    state->pxps_ma = movavg_new(state->net_movavg_wsize);
+    state->ikbps_ma = movavg_new(state->net_movavg_wsize);
+    state->okbps_ma = movavg_new(state->net_movavg_wsize);
+    state->ipxps_ma = movavg_new(state->net_movavg_wsize);
+    state->opxps_ma = movavg_new(state->net_movavg_wsize);
 
-    probe_init();                       /* per-OS probe init */
+    probe_init(state);                  /* per-OS probe init */
 }
 
 /**

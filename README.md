@@ -1,3 +1,8 @@
+Title: osdhud - a minimalist heads-up display for X11
+Author: attila <attila@stalphonsos.com>
+Date: 2014-10-16
+Base Header Level: 2
+
 # osdhud - minimalist heads-up display based on xosd
 
 osdhud is a heads-up display (hud) for X windows.  It uses the xosd
@@ -33,7 +38,26 @@ for a few seconds when you start X windows.
 
 Use the build.sh script in the top-level directory to invoke make.  It
 either uses -f BSDmakefile or -f GNUmakefile depending on what the
-native make command says.
+native make command says.  Any arguments are passed directly to the `make`
+invocation:
+
+  $ ./build.sh
+  The following targets are useful:
+    help              produce this message
+    all               build stuff
+    install           install everything but desktop into $(PREFIX)
+    clean             clean up temp files
+    distclean         clean + reset to virgin state
+    dist              cook dist-version.tar.gz tarball
+  Install prefix: /usr/local (override with PREFIX=... on command-line)
+    bin dir:  /usr/local/bin
+    man dir:  /usr/local/man
+
+The default installation prefix is `/usr/local`.  To change this
+specify PREFIX=dir as an argument to build.sh, e.g.
+
+  $ sudo ./build.sh PREFIX=/usr install
 
 ## Usage
 
+Write me.

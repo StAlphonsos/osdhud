@@ -34,18 +34,75 @@
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/route.h>
-#include <net/sockio.h>
+#include <sys/sockio.h>
 #include <sys/ioctl.h>
+#include <sys/swap.h>
 
 #define LOG1024        10
 #define pagetok(size) ((size) << pageshift)
 
+/* lifted from systat ca. openbsd 5.5 */
+
+struct ifcount {
+    u_int64_t    ifc_ib;            /* input bytes */
+    u_int64_t    ifc_ip;            /* input packets */
+    u_int64_t    ifc_ie;            /* input errors */
+    u_int64_t    ifc_ob;            /* output bytes */
+    u_int64_t    ifc_op;            /* output packets */
+    u_int64_t    ifc_oe;            /* output errors */
+    u_int64_t    ifc_co;            /* collisions */
+    int        ifc_flags;        /* up / down */
+    int        ifc_state;        /* link state */
+};
+
+struct ifstat {
+    char        ifs_name[IFNAMSIZ];    /* interface name */
+    char        ifs_description[IFDESCRSIZE];
+    struct ifcount    ifs_cur;
+    struct ifcount    ifs_old;
+    struct ifcount    ifs_now;
+    char        ifs_flag;
+};
+
+struct openbsd_data {
+    int                 nifs;
+    struct ifstat      *ifstats;
+    struct ifstat       sum;
+    struct timeval      boottime;
+    struct swapent     *swap_devices;
+};
+
 static int pageshift;
 
-void probe_init(
-    void)
+#define UPDATE(x, y) do {                                   \
+        ifs->ifs_now.x = ifm.y;                             \
+        ifs->ifs_cur.x = ifs->ifs_now.x - ifs->ifs_old.x;   \
+        state->sum.x += ifs->ifs_cur.x;                     \
+    } while(0)
+
+
+void
+rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)
 {
+    int i;
+
+    for (i = 0; i < RTAX_MAX; i++) {
+        if (addrs & (1 << i)) {
+            info[i] = sa;
+            sa = (struct sockaddr *) ((char *)(sa) +
+                roundup(sa->sa_len, sizeof(long)));
+        } else
+            info[i] = NULL;
+    }
+}
+
+void probe_init(
+    osdhud_state_t     *state)
+{
+    int mib[2] = { CTL_KERN, KERN_BOOTTIME };
     int pagesize;
+    struct openbsd_data *obsd;
+    size_t size = 0;
 
     /* taken from /usr/src/usr.bin/top/machine.c as of OpenBSD 5.5 */
     pagesize = getpagesize();
@@ -55,6 +112,38 @@ void probe_init(
         pagesize >>= 1;
     }
     pageshift -= LOG1024;
+
+    obsd = (struct openbsd_data *)malloc(sizeof(struct openbsd_data));
+    assert(obsd);
+    obsd->nifs = 0;
+    obsd->ifstats = NULL;
+
+    size = sizeof(obsd->boottime);
+    assert(!sysctl(mib,2,&obsd->boottime,&size,NULL,0));
+
+    if (!state->nswap)
+        obsd->swap_devices = NULL;
+    else {
+        obsd->swap_devices =
+            (struct swapent *)calloc(state->nswap,sizeof(struct swapent));
+        assert(obsd->swap_devices);
+    }
+
+    state->per_os_data = (void *)obsd;
+}
+
+void probe_cleanup(
+    osdhud_state_t     *state)
+{
+    if (state->per_os_data) {
+        struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+
+        free(obsd->swap_devices);
+        free(obsd->ifstats);
+        obsd->ifstats = NULL;
+        obsd->nifs = 0;
+        free(obsd);
+    }
 }
 
 void probe_load(
@@ -90,16 +179,38 @@ void probe_mem(
 void probe_swap(
     osdhud_state_t     *state)
 {
+    struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+    int i, used, xsize;
+
+    if (!state->nswap)
+        return;
+    assert(
+        swapctl(SWAP_STATS,(void *)obsd->swap_devices,state->nswap) ==
+        state->nswap
+    );
+    used = xsize = 0;
+    for (i = 0; i < state->nswap; i++) {
+        used += obsd->swap_devices[i].se_inuse;
+        xsize += obsd->swap_devices[i].se_nblks;
+    }
+    state->swap_used_percent = (float)used / (float)xsize;
 }
 
 void probe_net(
     osdhud_state_t     *state)
 {
-    struct if_msghdr ifm;
-    char *buf, *next;
+    char *buf, *next, *lim;
     size_t need;
     int i;
     int mib[6] = { CTL_NET, AF_ROUTE, 0, 0, NET_RT_IFLIST, 0 };
+    struct openbsd_data *os_data = (struct openbsd_data *)state->per_os_data;
+    struct ifstat *ifstats = os_data->ifstats;
+    int nifs = os_data->nifs;
+    struct if_msghdr ifm;
+    struct sockaddr *info[RTAX_MAX];
+    struct sockaddr_dl *sdl;
+    int num_ifs = 0;
+    struct ifstat *ifs;
 
     /*
      * This logic lifted directly from fetchifstat() in
@@ -128,8 +239,6 @@ void probe_net(
     /* lim points past the end */
     lim = buf + need;
     for (next = buf; next < lim; next += ifm.ifm_msglen) {
-        struct ifstat *ifs;
-
         bcopy(next,&ifm,sizeof(ifm));
         /* We might get back all kinds of things; filter for just the
          * ones we want to examine.
@@ -138,23 +247,87 @@ void probe_net(
             ifm.ifm_type != RTM_IFINFO ||
             !(ifm.ifm_addrs & RTA_IFP))
             continue;
-        if (ifm.ifm_index >= state->nifs) {
+        if (ifm.ifm_index >= nifs) {
             struct ifstat *newstats = realloc(
-                state->ifstats,(ifm.ifm_index + 4) * sizeof(strut ifstat)
+                ifstats,(ifm.ifm_index + 4) * sizeof(struct ifstat)
             );
             assert(newstats);
-            state->ifstats = newstats;
-            for (; state->nifs < ifm.ifm_index + 4; state->nifs++)
-                bzero(&state->ifstats[state->nifs], sizeof(*state->ifstats));
+            ifstats = newstats;
+            for (; nifs < ifm.ifm_index + 4; nifs++)
+                bzero(&ifstats[nifs], sizeof(*ifstats));
         }
-        ifs = &state->ifstats[ifm.ifm_index];
+        ifs = &ifstats[ifm.ifm_index];
         if (ifs->ifs_name[0] == '\0') {
-            struct sockaddr *info[RTAX_MAX];
-
             bzero(&info,sizeof(info));
+            rt_getaddrinfo(
+                (struct sockaddr *)((struct if_msghdr *)next + 1),
+                ifm.ifm_addrs, info);
+            sdl = (struct sockaddr_dl *)info[RTAX_IFP];
+            if (sdl && sdl->sdl_family == AF_LINK &&
+                sdl->sdl_nlen > 0) {
+                struct ifreq ifrdesc;
+                char ifdescr[IFDESCRSIZE];
+                int s;
+
+                bcopy(sdl->sdl_data, ifs->ifs_name,
+                      sdl->sdl_nlen);
+                ifs->ifs_name[sdl->sdl_nlen] = '\0';
+
+                /* Get the interface description */
+                memset(&ifrdesc, 0, sizeof(ifrdesc));
+                strlcpy(ifrdesc.ifr_name, ifs->ifs_name,
+                    sizeof(ifrdesc.ifr_name));
+                ifrdesc.ifr_data = (caddr_t)&ifdescr;
+
+                s = socket(AF_INET, SOCK_DGRAM, 0);
+                if (s != -1) {
+                    if (ioctl(s, SIOCGIFDESCR, &ifrdesc) == 0)
+                        strlcpy(ifs->ifs_description,
+                            ifrdesc.ifr_data,
+                            sizeof(ifs->ifs_description));
+                    close(s);
+                }
+            }
+            if (ifs->ifs_name[0] == '\0')
+                continue;
         }
+        num_ifs++;
+#define ifix(nn) ifm.ifm_data.ifi_##nn
+        ifs->ifs_cur.ifc_flags = ifm.ifm_flags;
+        ifs->ifs_cur.ifc_state = ifm.ifm_data.ifi_link_state;
+        ifs->ifs_flag++;
+        if (!state->net_iface && strncmp(ifs->ifs_name,"lo",2)) {
+            /* first non-loopback interface */
+            state->net_iface = strdup(ifs->ifs_name);
+            VSPEW("choosing first non-loopback interface: %s",state->net_iface);
+        }
+        if (state->net_iface && !strcmp(state->net_iface,ifs->ifs_name)) {
+            /* this is our boy */
+            unsigned long delta_in_b = ifix(ibytes) - state->net_tot_ibytes;
+            unsigned long delta_out_b = ifix(obytes) - state->net_tot_obytes;
+            unsigned long delta_in_p = ifix(ipackets) - state->net_tot_ipax;
+            unsigned long delta_out_p = ifix(opackets) - state->net_tot_opax;
+
+            update_net_statistics(
+                state,delta_in_b,delta_out_b,delta_in_p,delta_out_p
+            );
+            state->net_tot_ibytes = ifix(ibytes);
+            state->net_tot_obytes = ifix(obytes);
+            state->net_tot_ipax = ifix(ipackets);
+            state->net_tot_opax = ifix(opackets);
+        }
+#undef ifix
     }
-    /* XXX */
+    /* remove unreferenced interfaces */
+    for (i = 0; i < nifs; i++) {
+        ifs = &ifstats[i];
+        if (ifs->ifs_flag)
+            ifs->ifs_flag = 0;
+        else
+            ifs->ifs_name[0] = '\0';
+    }
+    os_data->ifstats = ifstats;
+    os_data->nifs = nifs;
 }
 
 void probe_battery(
@@ -165,4 +338,9 @@ void probe_battery(
 void probe_uptime(
     osdhud_state_t     *state)
 {
+    time_t now;
+    struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+
+    (void) time(&now);
+    state->sys_uptime = now - obsd->boottime.tv_sec;
 }

@@ -40,8 +40,15 @@
     } while (0);
 
 void probe_init(
-    void)
+    osdhud_state_t     *state)
 {
+    /* nothing */
+}
+
+void probe_cleanup(
+    osdhud_state_t     *state)
+{
+    /* nothing */
 }
 
 void probe_load(
@@ -94,8 +101,8 @@ void probe_net(
         struct if_data *d = NULL;
         int delta_in = 0;
         int delta_out = 0;
-        int delta_pax = 0;
-        int delta_bytes = 0;
+        int delta_pin = 0;
+        int delta_pout = 0;
 
         mib[4] = i;
         len = sizeof(ifmd);
@@ -116,17 +123,22 @@ void probe_net(
                     LOG_WARNING,"chose network interface: %s",state->net_iface
                 );
         }
-        state->net_tot_ipax += d->ifi_ipackets;
         state->net_tot_ierr += d->ifi_ierrors;
-        state->net_tot_opax += d->ifi_opackets;
         state->net_tot_oerr += d->ifi_oerrors;
+
         delta_in = d->ifi_ibytes - state->net_tot_ibytes;
         state->net_tot_ibytes += delta_in;
+
         delta_out = d->ifi_obytes - state->net_tot_obytes;
         state->net_tot_obytes += delta_out;
-        delta_bytes = delta_in + delta_out;
-        delta_pax = d->ifi_ipackets + d->ifi_opackets;
-        update_net_statistics(state,delta_bytes,delta_pax);
+
+        delta_pin = d->ifi_ipackets - state->net_tot_ipax;
+        state->net_tot_ipax += delta_pin;
+
+        delta_pout = d->ifi_opackets - state->net_tot_opax;
+        state->net_tot_opax += delta_pout;
+
+        update_net_statistics(state,delta_in,delta_out,delta_pin,delta_pout);
         break;
     }
     if (i == ifcount)

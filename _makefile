@@ -18,7 +18,7 @@ BINARIES=osdhud
 
 MAKESYS?=build.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
 SUDIRS?=
-FILES?=osdhud.c $(UNAME).c
+FILES?=osdhud.c freebsd.c openbsd.c osdhud.h
 DIST_NAME?=$(PACKAGE_NAME)
 DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
 DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)

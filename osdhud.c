@@ -210,8 +210,7 @@ static void display_load(
     osdhud_state_t     *state)
 {
     xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"load: %.2f",state->load_avg
+        state->osd,state->disp_line++,XOSD_printf,"load: %.2f",state->load_avg
     );
 }
 
@@ -220,14 +219,8 @@ static void display_mem(
 {
     int percent = (int)(100 * state->mem_used_percent);
 
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"mem: %d%%",percent
-    );
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_percentage,percent
-    );
+    xosd_display(state->osd,state->disp_line++,XOSD_printf,"mem: %d%%",percent);
+    xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
 }
 
 static void display_swap(
@@ -257,7 +250,7 @@ static void display_net(
     );
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s pax/sec: %.2f in + %.2f out = %.2f total",
+        "%s px/sec: %.2f in + %.2f out = %.2f total",
         label,state->net_ipxps,state->net_opxps,net_pxps
     );
 }
@@ -372,9 +365,7 @@ static void display_hudmeta(
             left_s[0]? " [": "",left_s,left_s[0]? "]":""
         );
     else if (left_s[0])
-        xosd_display(
-            osd,line,XOSD_printf,"[%s]",left_s
-        );
+        xosd_display(osd,line,XOSD_printf,"[%s]",left_s);
 }
 
 /**

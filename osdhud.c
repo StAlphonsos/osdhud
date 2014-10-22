@@ -375,12 +375,12 @@ static void display(
     osdhud_state_t     *state)
 {
     state->disp_line = 0;
+    display_uptime(state);
     display_load(state);
     display_mem(state);
     display_swap(state);
     display_net(state);
     display_battery(state);
-    display_uptime(state);
     display_hudmeta(state);
 }
 

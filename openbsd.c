@@ -5,6 +5,12 @@
  * @brief probe functions for osdhud on OpenBSD
  *
  * Implement the probe_xxx() functions used by osdhud.c for OpenBSD.
+ *
+ * Much of this code is lifted liberally from the OpenBSD systat
+ * command whose source code can be found in /usr/src/usr.bin/systat
+ * in the OpenBSD source tree as of version 5.5.  XXX not sure if I
+ * should cut and paste the licenses from if.c, systat.h, swap.c and
+ * w.c here or if pointing at them and waving a BSD flag is enough...
  */
 
 /* LICENSE:
@@ -67,19 +73,11 @@ struct ifstat {
 struct openbsd_data {
     int                 nifs;
     struct ifstat      *ifstats;
-    struct ifstat       sum;
     struct timeval      boottime;
     struct swapent     *swap_devices;
 };
 
 static int pageshift;
-
-#define UPDATE(x, y) do {                                   \
-        ifs->ifs_now.x = ifm.y;                             \
-        ifs->ifs_cur.x = ifs->ifs_now.x - ifs->ifs_old.x;   \
-        state->sum.x += ifs->ifs_cur.x;                     \
-    } while(0)
-
 
 void
 rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)

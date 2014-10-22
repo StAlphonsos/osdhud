@@ -282,13 +282,16 @@ static void display_uptime(
 #define catsup(var)                                                     \
         if (var) {                                                      \
             size_t _catsup_n;                                           \
+            char _catsup_u[10] = #var;                                  \
             if (off) {                                                  \
                 assert(nleft > 2);                                      \
                 strlcat(&upbuf[off]," ",nleft);                         \
                 nleft -= 1;                                             \
                 off += 1;                                               \
             }                                                           \
-            _catsup_n = snprintf(&upbuf[off],nleft,"%lu " #var,var);    \
+            if (var == 1) _catsup_u[strlen(#var)-1] = 0;                \
+            _catsup_n = snprintf(                                       \
+                &upbuf[off],nleft,"%lu %s",var,_catsup_u);              \
             assert(_catsup_n < nleft);                                  \
             off += _catsup_n;                                           \
             nleft -= _catsup_n;                                         \

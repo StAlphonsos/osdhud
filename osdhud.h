@@ -159,7 +159,7 @@ typedef struct osdhud_state {
 } osdhud_state_t;
 
 #define KILO 1000
-
+#define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
 
 #define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
@@ -171,7 +171,7 @@ typedef struct osdhud_state {
 #define DEFAULT_SHORT_PAUSE 300
 #define DEFAULT_LONG_PAUSE 1800
 #define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
-#define DEFAULT_NET_MOVAVG_WSIZE 300   /* gran: SHORT_PAUSE (~90sec total) */
+#define DEFAULT_NET_MOVAVG_WSIZE 6
 #define DEFAULT_NSWAP 1
 
 #define DBG1(fmt,arg1)                                                  \
@@ -200,6 +200,14 @@ typedef struct osdhud_state {
 
 #define VSPEW(fmt,...)                                                  \
     if (state->verbose) {                                               \
+        if (state->foreground)                                          \
+            printf(fmt "\n",##__VA_ARGS__);                             \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,##__VA_ARGS__);                      \
+    }
+
+#define DSPEW(fmt,...)                                                  \
+    if (state->debug) {                                                 \
         if (state->foreground)                                          \
             printf(fmt "\n",##__VA_ARGS__);                             \
         else                                                            \

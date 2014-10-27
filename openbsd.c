@@ -216,11 +216,11 @@ void probe_net(
      * thought it was ugly and strange but after reading the man pages
      * and the source I've come to the conclusion that it is as it
      * should be... just needed to bring myself up to date from my
-     * 1990's level of clue.  The commentary is mine, mainly to help
-     * me keep it straight vs. FreeBSD.
+     * 1990's level of clue.  The inline commentary is mine, mainly to
+     * help me keep it straight vs. FreeBSD.
      */
 
-    /* Probe how many entries we need in the array */
+    /* Ask how much space will be needed for the whole array */
     if (sysctl(mib,ARRAY_SIZE(mib),NULL,&need,NULL,0) < 0) {
         SPEWE("sysctl(IFLIST)");
         return;
@@ -230,6 +230,7 @@ void probe_net(
         SPEWE("malloc failed for interface list buffer");
         return;
     }
+    /* Now get them */
     if (sysctl(mib,ARRAY_SIZE(mib),buf,&need,NULL,0) < 0) {
         SPEWE("sysctl(IFLIST#2)");
         return;

@@ -37,7 +37,9 @@
 
 int interrupted = 0;                    /* got a SIGINT */
 int restart_req = 0;                    /* got a SIGHUP */
+#ifdef SIGINFO
 int bang_bang = 0;                      /* got a SIGINFO */
+#endif
 
 /*
  * Maintain moving averages.
@@ -107,6 +109,12 @@ float movavg_add(
     return result;
 }
 
+float movavg_val(
+    struct movavg      *ma)
+{
+    return (ma && ma->count) ? (ma->sum / ma->count) : 0;
+}
+
 /*
  * Utilities
  */
@@ -139,12 +147,18 @@ void update_net_statistics(
     unsigned long       delta_opax)
 {
     if (state->delta_t) {
-        float dt = (float)state->delta_t;
+        float dt = (float)state->delta_t / 1000.0;
 
-        state->net_ikbps = (movavg_add(state->ikbps_ma,delta_ibytes)/dt)/KILO;
-        state->net_okbps = (movavg_add(state->okbps_ma,delta_obytes)/dt)/KILO;
+        state->net_ikbps = (movavg_add(state->ikbps_ma,delta_ibytes) / dt)/KILO;
+        state->net_okbps = (movavg_add(state->okbps_ma,delta_obytes) / dt)/KILO;
         state->net_ipxps = movavg_add(state->ipxps_ma,delta_ipax) / dt;
         state->net_opxps = movavg_add(state->opxps_ma,delta_opax) / dt;
+
+        DSPEW("net %s bytes in  += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_ibytes,movavg_val(state->ikbps_ma),dt,state->net_ikbps);
+        DSPEW("net %s bytes out += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_obytes,movavg_val(state->okbps_ma),dt,state->net_okbps);
+        DSPEW("net %s pax   in  += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_ipax,movavg_val(state->ipxps_ma),dt,state->net_ipxps);
+        DSPEW("net %s pax   out += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_opax,movavg_val(state->opxps_ma),dt,state->net_opxps);
+
     }
 }
 
@@ -190,7 +204,7 @@ static unsigned long time_in_milliseconds(
 static void probe(
     osdhud_state_t     *state)
 {
-    unsigned long now = time_in_microseconds();
+    unsigned long now = time_in_milliseconds();
 
     state->delta_t = now - state->last_t;
     state->last_t = now;
@@ -242,11 +256,21 @@ static void display_net(
     char *label = state->net_iface? state->net_iface: "net";
     float net_kbps = state->net_ikbps + state->net_okbps;
     float net_pxps = state->net_ipxps + state->net_opxps;
+    char unit = 'k';
+    float unit_div = 1.0;
 
+    if (net_kbps > MEGA) {
+        unit = 'g';
+        unit_div = MEGA;
+    } else if (net_kbps > KILO) {
+        unit = 'm';
+        unit_div = KILO;
+    }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s kB/sec: %.2f in + %.2f out = %.2f total",
-        label,state->net_ikbps,state->net_okbps,net_kbps
+        "%s %cB/sec: %.2f in + %.2f out = %.2f total",
+        label,unit,state->net_ikbps/unit_div,state->net_okbps/unit_div,
+        net_kbps/unit_div
     );
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
@@ -387,7 +411,7 @@ static void display(
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwh?"
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhg?"
 
 #define USAGE_MSG "usage: %s [-vkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
@@ -1018,6 +1042,8 @@ static int check(
         }
         if (restart_req)
             syslog(LOG_WARNING,"restart requested - not doing anything");
+        interrupted = restart_req = 0;
+#ifdef SIGINFO
         if (bang_bang) {
             syslog(LOG_WARNING,"bang, bang");
             done = 1;
@@ -1026,7 +1052,8 @@ static int check(
             else
                 state->duration_msecs += state->display_msecs;
         }
-        interrupted = restart_req = bang_bang = 0;
+        bang_bang = 0;
+#endif
     } while (!done && !quit_loop);
     return quit_loop;
 }
@@ -1134,7 +1161,7 @@ static int kicked(
     struct stat sock_stat;
 
     if (state->foreground)
-        /* run in foreground - don't even try*/
+        /* run in foreground - don't even try */
         return 0;
     sock_fd = socket(PF_UNIX,SOCK_STREAM,0);
     if (sock_fd < 0) {
@@ -1289,7 +1316,7 @@ static void hud_up(
 }
 
 /**
- * Bring down the HUD and Check to see if we should stick around
+ * Bring down the HUD
  */
 static void hud_down(
     osdhud_state_t     *state)
@@ -1329,9 +1356,11 @@ static void handle_signal(
     case SIGHUP:
         restart_req = 1;
         break;
+#ifdef SIGINFO
     case SIGINFO:
         bang_bang = 1;
         break;
+#endif
     default:
         syslog(LOG_ERR,"received unexpected signal #%d",info->si_signo);
         break;
@@ -1368,7 +1397,6 @@ static void setup_daemon(
     openlog(state->argv0,syslog_flags,LOG_LOCAL0);
     if (state->verbose)
         syslog(LOG_INFO,"server starting; v%s",VERSION);
-    /* No running instance - create socket */
     state->sock_fd = socket(PF_UNIX,SOCK_STREAM,0);
     if (state->sock_fd < 0) {
         syslog(

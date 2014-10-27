@@ -16,7 +16,7 @@
 
 BINARIES=osdhud
 
-MAKESYS?=build.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
+MAKESYS?=make.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
 SUDIRS?=
 FILES?=osdhud.c freebsd.c openbsd.c osdhud.h
 DIST_NAME?=$(PACKAGE_NAME)
@@ -26,11 +26,10 @@ DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
 DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc
 
-default:: help
+default: help
 
 help::
 	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < _makefile
-
 	@$(ECHO) Install prefix: $(PREFIX) '(override with PREFIX=... on command-line)'
 	@$(ECHO) '    bin dir: ' $(BINDIR)
 	@$(ECHO) '    man dir: ' $(MANDIR)

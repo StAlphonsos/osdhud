@@ -25,23 +25,14 @@ From the source code:
   I call this the Caveman Theory of Human/Computer Interaction:
   PUNCH COMPUTER TO MAKE IT GO.
 
-The first time osdhud is invoked it will daemonize itself and listen
-on a Unix-domain socket; by default it lives in your home directory.
-We do this so that osdhud can keep running statistics on things like
-network utilization in the background.  Obviously these statistics get
-better the longer osdhud runs.  If you want to start osdhud without
-bringing up the display use the `-n` option; this can be useful in
-your `~/.xinitrc` or similar script if you don't want the HUD to flash
-for a few seconds when you start X windows.
-
 ## Building and Installing
 
-Use the build.sh script in the top-level directory to invoke make.  It
+Use the make.sh script in the top-level directory to invoke make.  It
 either uses -f BSDmakefile or -f GNUmakefile depending on what the
-native make command says.  Any arguments are passed directly to the `make`
-invocation:
+native make command says.  Any arguments are passed directly to the
+`make` invocation:
 
-  $ ./build.sh
+  $ ./make.sh
   The following targets are useful:
     help              produce this message
     all               build stuff
@@ -56,8 +47,38 @@ invocation:
 The default installation prefix is `/usr/local`.  To change this
 specify PREFIX=dir as an argument to build.sh, e.g.
 
-  $ sudo ./build.sh PREFIX=/usr install
+  # Linux
+  $ sudo ./make.sh PREFIX=/usr install
+  
+  # To install in ~/bin
+  $ ./make.sh PREFIX=$HOME install
 
 ## Usage
 
-Write me.
+The first time osdhud is invoked it will daemonize itself and listen
+on a Unix-domain socket; by default it lives in your home directory.
+We do this so that osdhud can keep running statistics on things like
+network utilization in the background.  Obviously these statistics get
+better the longer osdhud runs.  If you want to start osdhud without
+bringing up the display use the `-n` option; this can be useful in
+your `~/.xinitrc` or similar script if you don't want the HUD to flash
+for a few seconds when you start X windows.
+
+## TO-DO
+
+* Better network interface specifications:
+  all   - all interfaces that are up except for lo*
+  alll  - all + loopback(s)
+  group - e.g. egress
+  a,b,c - multiple interfaces separated by commas
+  em\d+ - all interfaces matching regexp em\d+
+* Fix issues with sampling interval changing.
+  Maybe just ditch that, perhaps it doesn't make a difference
+* Query network interfaces for their maximum speed.  This is highly
+  OS-specific.  Under OpenBSD I believe this can only be gleaned from
+  the media flags (IFM_xxx) that you get back from one of those damned
+  ioctl's or routing socket messages...  We should map those into
+  a table lookup or something.  Given the maximum speed we can then
+  display a percentage meter underneath the text.
+* xosd: our display is not always on top.  Why?  Isn't that what
+  their update thread is for?

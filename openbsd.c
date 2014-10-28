@@ -44,31 +44,33 @@
 #include <sys/sockio.h>
 #include <sys/ioctl.h>
 #include <sys/swap.h>
+#include <machine/apmvar.h>
 
+#define APM_DEV "/dev/apm"
 #define LOG1024        10
 #define pagetok(size) ((size) << pageshift)
 
 /* lifted from systat ca. openbsd 5.5 */
 
 struct ifcount {
-    u_int64_t   ifc_ib;            /* input bytes */
-    u_int64_t   ifc_ip;            /* input packets */
-    u_int64_t   ifc_ie;            /* input errors */
-    u_int64_t   ifc_ob;            /* output bytes */
-    u_int64_t   ifc_op;            /* output packets */
-    u_int64_t   ifc_oe;            /* output errors */
-    u_int64_t   ifc_co;            /* collisions */
-    int         ifc_flags;         /* up / down */
-    int         ifc_state;         /* link state */
+    u_int64_t           ifc_ib;         /* input bytes */
+    u_int64_t           ifc_ip;         /* input packets */
+    u_int64_t           ifc_ie;         /* input errors */
+    u_int64_t           ifc_ob;         /* output bytes */
+    u_int64_t           ifc_op;         /* output packets */
+    u_int64_t           ifc_oe;         /* output errors */
+    u_int64_t           ifc_co;         /* collisions */
+    int                 ifc_flags;      /* up / down */
+    int                 ifc_state;      /* link state */
 };
 
 struct ifstat {
-    char        ifs_name[IFNAMSIZ];    /* interface name */
-    struct ifcount    ifs_cur;
-    struct ifcount    ifs_old;
-    struct ifcount    ifs_now;
-    char        ifs_flag;
-    int         ifs_speed;
+    char                ifs_name[IFNAMSIZ]; /* interface name */
+    struct ifcount      ifs_cur;
+    struct ifcount      ifs_old;
+    struct ifcount      ifs_now;
+    char                ifs_flag;
+    int                 ifs_speed;
 };
 
 struct openbsd_data {
@@ -336,7 +338,7 @@ void probe_net(
                 /* Create a socket to issue SIOCGIFMEDIA on */
                 bcopy(sdl->sdl_data,ifs->ifs_name,sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
-                /* Get the interface speed if possible */
+                /* Suss interface speed if possible */
                 bzero(&media,sizeof(media));
                 strlcpy(media.ifm_name,ifs->ifs_name,sizeof(media.ifm_name));
                 s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -402,9 +404,74 @@ void probe_net(
     os_data->nifs = nifs;
 }
 
+/* c.f. apm(4) */
 void probe_battery(
     osdhud_state_t     *state)
 {
+    int apm;
+    struct apm_power_info info;
+
+    if (state->battery_missing)
+        return;
+    apm = open(APM_DEV,O_RDONLY);
+    if (apm < 0) {
+        perror(APM_DEV);
+        return;
+    }
+    bzero(&info,sizeof(info));
+    if (ioctl(apm,APM_IOC_GETPOWER,&info) < 0) {
+        perror("APM_IOC_GETPOWER");
+        close(apm);
+        return;
+    }
+    if (info.battery_state == APM_BATTERY_ABSENT)
+        state->battery_missing = 1;
+    else {
+        char *bat = NULL;
+        char *ac = NULL;
+
+        switch (info.battery_state) {
+        case APM_BATT_HIGH:
+            bat = "high";
+            break;
+        case APM_BATT_LOW:
+            bat = "low";
+            break;
+        case APM_BATT_CRITICAL:
+            bat = "critical";
+            break;
+        case APM_BATT_CHARGING:
+            bat = "charging";
+            break;
+        case APM_BATT_UNKNOWN:
+            bat = "unk";
+            break;
+        default:
+            bat = "?";
+            break;
+        }
+        switch (info.ac_state) {
+        case APM_AC_OFF:
+            ac = "no ac";
+            break;
+        case APM_AC_ON:
+            ac = "ac on";
+            break;
+        case APM_AC_BACKUP:
+            ac = "backup";
+            break;
+        case APM_AC_UNKNOWN:
+            ac = "unk";
+        default:
+            ac = "?";
+            break;
+        }
+        free(state->battery_state);
+        assert(asprintf(&state->battery_state,"%s/%s",bat,ac) > 0);
+        state->battery_life = info.battery_life;
+        state->battery_time = info.minutes_left;
+    }
+    close(apm);
 }
 
 void probe_uptime(

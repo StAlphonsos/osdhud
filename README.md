@@ -74,11 +74,5 @@ for a few seconds when you start X windows.
   em\d+ - all interfaces matching regexp em\d+
 * Fix issues with sampling interval changing.
   Maybe just ditch that, perhaps it doesn't make a difference
-* Query network interfaces for their maximum speed.  This is highly
-  OS-specific.  Under OpenBSD I believe this can only be gleaned from
-  the media flags (IFM_xxx) that you get back from one of those damned
-  ioctl's or routing socket messages...  We should map those into
-  a table lookup or something.  Given the maximum speed we can then
-  display a percentage meter underneath the text.
 * xosd: our display is not always on top.  Why?  Isn't that what
   their update thread is for?

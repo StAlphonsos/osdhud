@@ -170,6 +170,7 @@ static void clear_net_statistics(
     state->net_tot_ibytes = state->net_tot_obytes =
         state->net_tot_ipax = state->net_tot_opax = 0;
     state->net_speed_mbits = 0;
+    state->net_peak_kbps = state->net_peak_pxps = 0;
     movavg_clear(state->ikbps_ma);
     movavg_clear(state->okbps_ma);
     movavg_clear(state->ipxps_ma);
@@ -261,6 +262,10 @@ static void display_net(
     float unit_div = 1.0;
     float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
 
+    if (net_kbps > state->net_peak_kbps)
+        state->net_peak_kbps = net_kbps;
+    if (net_pxps > state->net_peak_pxps)
+        state->net_peak_pxps = net_pxps;
     if (net_kbps > MEGA) {
         unit = 'g';
         unit_div = MEGA;
@@ -270,9 +275,9 @@ static void display_net(
     }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s %cB/s: %.2f in + %.2f out = %.2f total",
-        label,unit,state->net_ikbps/unit_div,state->net_okbps/unit_div,
-        net_kbps/unit_div
+        "%s %.2f %cB/s (%.2f in + %.2f out)",
+        label,net_kbps/unit_div,unit,state->net_ikbps/unit_div,
+        state->net_okbps/unit_div
     );
     if (max_kbps) {
         int percent = (int)(100 * (net_kbps / max_kbps));
@@ -281,14 +286,26 @@ static void display_net(
     }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s px/s: %.2f in + %.2f out = %.2f total",
-        label,state->net_ipxps,state->net_opxps,net_pxps
+        "%s %.2f px/s (%.2f in + %.2f out)",
+        label,net_pxps,state->net_ipxps,state->net_opxps
     );
 }
 
 static void display_battery(
     osdhud_state_t     *state)
 {
+    char *charging = state->battery_state ? state->battery_state : "-unknown-";
+
+    if (state->battery_missing)
+        return;
+    xosd_display(
+        state->osd,state->disp_line++,XOSD_printf,
+        "battery: %s, %d%% charged (%d mins)",charging,
+        state->battery_life,state->battery_time
+    );
+    xosd_display(
+        state->osd,state->disp_line++,XOSD_percentage,state->battery_life
+    );
 }
 
 static void display_uptime(
@@ -418,7 +435,7 @@ static void display(
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhg?"
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgt?"
 
 #define USAGE_MSG "usage: %s [-vkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
@@ -549,6 +566,10 @@ static int parse(
             state->quiet_at_start = 1;
             DBG1("parsed -%c",ch);
             break;
+        case 't':
+            state->toggle_mode = 1;
+            DBG1("parsed -%c",ch);
+            break;
         case '?':                       /* help */
         case 'h':                       /* ditto */
             fail = usage(state,NULL);
@@ -577,7 +598,7 @@ static void init_state(
     state->kill_server = state->down_hud = state->up_hud = state->countdown =
         state->stick_hud = state->unstick_hud = state->foreground =
         state->hud_is_up = state->server_quit = state->stuck = state->verbose =
-        state->debug = 0;
+        state->debug = state->toggle_mode = 0;
     state->pid = 0;
     state->sock_fd = -1;
     state->sock_path = NULL;
@@ -606,14 +627,13 @@ static void init_state(
     state->per_os_data = NULL;
     state->net_ikbps = state->net_ipxps =
         state->net_okbps = state->net_opxps = 0;
+    state->net_peak_kbps = state->net_peak_pxps = 0;
     state->ikbps_ma = state->ipxps_ma =
         state->okbps_ma = state->opxps_ma = NULL;
+    state->battery_missing = 0;
     state->battery_life = 0;
-    state->battery_life_avail = 0;
-    state->battery_state = 0;
-    state->battery_state_avail = 0;
+    state->battery_state = NULL;
     state->battery_time = 0;
-    state->battery_time_avail = 0;
     state->last_t = 0;
     state->first_t = 0;
     state->sys_uptime = 0;
@@ -652,6 +672,7 @@ static osdhud_state_t *create_state(
         set_field(server_quit);
         set_field(stuck);
         set_field(debug);
+        set_field(toggle_mode);
         set_field(countdown);
         dup_field(sock_path);
         cpy_field(addr);
@@ -694,6 +715,7 @@ static void cleanup_state(
         state->font = NULL;
         free(state->net_iface);
         state->net_iface = NULL;
+        free(state->battery_state);
         movavg_free(state->ikbps_ma);
         state->ikbps_ma = NULL;
         movavg_free(state->okbps_ma);
@@ -862,7 +884,7 @@ static int handle_message(
                             state->display_msecs,foo->display_msecs
                         );
                     state->display_msecs = foo->display_msecs;
-                    if (!state->hud_is_up)
+                    if (!state->hud_is_up || state->toggle_mode)
                         retval = 1;
                     else {
                         /* hud is up: increase duration of display */
@@ -942,6 +964,8 @@ static int handle_message(
                         retval = state->hud_is_up ? 1 : 0;
                     if (foo->unstick_hud)
                         state->stuck = 0;
+                    if (foo->toggle_mode)
+                        state->toggle_mode = !state->toggle_mode;
                     state->countdown = foo->countdown;
                 }
             }
@@ -966,10 +990,10 @@ static int handle_message(
 /**
  * Pause for the appropriate amount of time given our state
  *
- * If we are displaying the HUD then pause for the short
- * inter-sample time (usually 100msec).  If we are not displaying
- * the HUD then pause for the long inter-sample time (1 second).
- * We use select(2) to also watch for events on the control socket.
+ * If we are displaying the HUD then pause for the short inter-sample
+ * time (usually 100msec).  If we are not displaying the HUD then
+ * pause for the long inter-sample time (1 second).  We use select(2)
+ * to also watch for events on the control socket.
  *
  * Our return value decides whether or not we exit the loop we are in:
  * either the HUD's-Up short-time loop or the HUD's-Down long-time
@@ -1029,7 +1053,7 @@ static int check(
             } /* else message told us to quit loop */
         } else {                        /* timeout */
             done = 1;
-            if (state->hud_is_up) {
+            if (state->hud_is_up && !state->toggle_mode) {
                 /* if hud is up, see if it is time to bring it down */
                 int now = time_in_milliseconds();
                 int delta_d = (now - state->t0_msecs);

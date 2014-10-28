@@ -101,6 +101,7 @@ typedef struct osdhud_state {
     int                 debug:1;
     int                 countdown:1;
     int                 quiet_at_start:1;
+    int                 toggle_mode:1;
     char               *argv0;
     int                 pid;
     char               *sock_path;
@@ -139,14 +140,14 @@ typedef struct osdhud_state {
     float               net_ipxps;
     struct movavg      *opxps_ma;
     float               net_opxps;
+    float               net_peak_kbps;
+    float               net_peak_pxps;
     float               mem_used_percent;
     float               swap_used_percent;
+    int                 battery_missing:1;
     int                 battery_life;
-    int                 battery_life_avail:1;
-    int                 battery_state;
-    int                 battery_state_avail:1;
+    char               *battery_state;
     int                 battery_time;
-    int                 battery_time_avail:1;
     unsigned long       uptime_secs;
     unsigned long       last_t;
     unsigned long       first_t;

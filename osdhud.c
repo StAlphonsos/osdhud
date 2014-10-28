@@ -169,6 +169,7 @@ static void clear_net_statistics(
         state->net_okbps = state->net_opxps = 0;
     state->net_tot_ibytes = state->net_tot_obytes =
         state->net_tot_ipax = state->net_tot_opax = 0;
+    state->net_speed_mbits = 0;
     movavg_clear(state->ikbps_ma);
     movavg_clear(state->okbps_ma);
     movavg_clear(state->ipxps_ma);
@@ -258,6 +259,7 @@ static void display_net(
     float net_pxps = state->net_ipxps + state->net_opxps;
     char unit = 'k';
     float unit_div = 1.0;
+    float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
 
     if (net_kbps > MEGA) {
         unit = 'g';
@@ -268,13 +270,18 @@ static void display_net(
     }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s %cB/sec: %.2f in + %.2f out = %.2f total",
+        "%s %cB/s: %.2f in + %.2f out = %.2f total",
         label,unit,state->net_ikbps/unit_div,state->net_okbps/unit_div,
         net_kbps/unit_div
     );
+    if (max_kbps) {
+        int percent = (int)(100 * (net_kbps / max_kbps));
+
+        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+    }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "%s px/sec: %.2f in + %.2f out = %.2f total",
+        "%s px/s: %.2f in + %.2f out = %.2f total",
         label,state->net_ipxps,state->net_opxps,net_pxps
     );
 }
@@ -580,6 +587,7 @@ static void init_state(
     memset((void *)&state->addr,0,sizeof(state->addr));
     state->font = NULL;
     state->net_iface = NULL;
+    state->net_speed_mbits = 0;
     state->net_tot_ipax = state->net_tot_ierr =
         state->net_tot_opax = state->net_tot_oerr =
         state->net_tot_ibytes = state->net_tot_obytes = 0;
@@ -916,6 +924,7 @@ static int handle_message(
                         free(state->net_iface);
                         state->net_iface = foo->net_iface ?
                             strdup(foo->net_iface) : NULL;
+                        state->net_speed_mbits = 0;
                     }
 #undef is_different
                     if (state->verbose)

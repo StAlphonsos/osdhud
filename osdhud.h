@@ -64,7 +64,7 @@
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
-#if __amd64__                           /* XXX check size */
+#if __amd64__                           /* XXX WRONG! */
 # define SIZEOF_F "%ld"
 #else
 # define SIZEOF_F "%d"
@@ -108,6 +108,7 @@ typedef struct osdhud_state {
     int                 sock_fd;
     char               *font;
     char               *net_iface;
+    int                 net_speed_mbits;
     char               *time_fmt;
     int                 nswap;
     unsigned long       net_tot_ipax;

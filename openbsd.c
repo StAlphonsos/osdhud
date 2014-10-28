@@ -39,6 +39,7 @@
 #include <sys/sysctl.h>
 #include <net/if.h>
 #include <net/if_dl.h>
+#include <net/if_media.h>
 #include <net/route.h>
 #include <sys/sockio.h>
 #include <sys/ioctl.h>
@@ -50,15 +51,15 @@
 /* lifted from systat ca. openbsd 5.5 */
 
 struct ifcount {
-    u_int64_t    ifc_ib;            /* input bytes */
-    u_int64_t    ifc_ip;            /* input packets */
-    u_int64_t    ifc_ie;            /* input errors */
-    u_int64_t    ifc_ob;            /* output bytes */
-    u_int64_t    ifc_op;            /* output packets */
-    u_int64_t    ifc_oe;            /* output errors */
-    u_int64_t    ifc_co;            /* collisions */
-    int        ifc_flags;        /* up / down */
-    int        ifc_state;        /* link state */
+    u_int64_t   ifc_ib;            /* input bytes */
+    u_int64_t   ifc_ip;            /* input packets */
+    u_int64_t   ifc_ie;            /* input errors */
+    u_int64_t   ifc_ob;            /* output bytes */
+    u_int64_t   ifc_op;            /* output packets */
+    u_int64_t   ifc_oe;            /* output errors */
+    u_int64_t   ifc_co;            /* collisions */
+    int         ifc_flags;         /* up / down */
+    int         ifc_state;         /* link state */
 };
 
 struct ifstat {
@@ -68,6 +69,7 @@ struct ifstat {
     struct ifcount    ifs_old;
     struct ifcount    ifs_now;
     char        ifs_flag;
+    int         ifs_speed;
 };
 
 struct openbsd_data {
@@ -78,6 +80,61 @@ struct openbsd_data {
 };
 
 static int pageshift;
+
+#define M_ETHER(ttt)    IFM_ETHER|IFM_##ttt
+#define M_FDDI(ttt)     IFM_FDDI|IFM_FDDI_##ttt
+#define M_WIFI(ttt)     IFM_IEEE80211|IFM_IEEE80211_##ttt
+
+static struct { int bits; int mbit_sec; } media_speeds[] = {
+    { M_ETHER(10_T),              10 },
+    { M_ETHER(10_2),              10 },
+    { M_ETHER(10_5),              10 },
+    { M_ETHER(100_TX),           100 },
+    { M_ETHER(100_FX),           100 },
+    { M_ETHER(100_T4),           100 },
+    { M_ETHER(100_VG),           100 },
+    { M_ETHER(100_T2),           100 },
+    { M_ETHER(1000_SX),         1000 },
+    { M_ETHER(10_STP),            10 },
+    { M_ETHER(10_FL),             10 },
+    { M_ETHER(1000_LX),         1000 },
+    { M_ETHER(1000_CX),         1000 },
+    { M_ETHER(HPNA_1),             1 },
+    { M_ETHER(10G_LR),            10 },
+    { M_ETHER(10G_SR),            10 },
+    { M_ETHER(10G_CX4),           10 },
+    { M_ETHER(2500_SX),         2500 },
+    { M_ETHER(10G_T),          10000 },
+    { M_ETHER(10G_SFP_CU),     10000 },
+
+    /* FDDI ?  Don't know speeds, no net access now, just guessing XXX */
+
+    { M_FDDI(SMF),               100 },
+    { M_FDDI(MMF),               100 },
+    { M_FDDI(UTP),               100 },
+
+    /* 802.11xxx */
+
+    { M_WIFI(FH1),                 1 },
+    { M_WIFI(FH2),                 2 },
+    { M_WIFI(DS2),                 2 },
+    { M_WIFI(DS5),                 5 },
+    { M_WIFI(DS11),               11 },
+    { M_WIFI(DS1),                 1 },
+    { M_WIFI(DS22),               22 },
+    { M_WIFI(OFDM6),               6 },
+    { M_WIFI(OFDM9),               9 },
+    { M_WIFI(OFDM12),             12 },
+    { M_WIFI(OFDM18),             18 },
+    { M_WIFI(OFDM24),             24 },
+    { M_WIFI(OFDM48),             48 },
+    { M_WIFI(OFDM54),             54 },
+    { M_WIFI(OFDM72),             72 },
+
+    /* XXX add more later */
+
+    { 0,                          10 }, /* default !? */
+};
 
 void
 rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)
@@ -267,6 +324,7 @@ void probe_net(
                 struct ifreq ifrdesc;
                 char ifdescr[IFDESCRSIZE];
                 int s;
+                struct ifmediareq media;
 
                 bcopy(sdl->sdl_data, ifs->ifs_name,
                       sdl->sdl_nlen);
@@ -274,9 +332,12 @@ void probe_net(
 
                 /* Get the interface description */
                 memset(&ifrdesc, 0, sizeof(ifrdesc));
-                strlcpy(ifrdesc.ifr_name, ifs->ifs_name,
-                    sizeof(ifrdesc.ifr_name));
+                strlcpy(ifrdesc.ifr_name,ifs->ifs_name,
+                        sizeof(ifrdesc.ifr_name));
                 ifrdesc.ifr_data = (caddr_t)&ifdescr;
+
+                memset(&media,0,sizeof(media));
+                strlcpy(media.ifm_name,ifs->ifs_name,sizeof(media.ifm_name));
 
                 s = socket(AF_INET, SOCK_DGRAM, 0);
                 if (s != -1) {
@@ -284,6 +345,21 @@ void probe_net(
                         strlcpy(ifs->ifs_description,
                             ifrdesc.ifr_data,
                             sizeof(ifs->ifs_description));
+                    if (ioctl(s,SIOCGIFMEDIA,&media) == 0) {
+                        int act = media.ifm_active & 0xff;
+                        int mbit_sec = 0;
+                        int i;
+
+                        for (i = 0; i < ARRAY_SIZE(media_speeds); i++)
+                            if (media_speeds[i].bits == act) {
+                                mbit_sec = media_speeds[i].mbit_sec;
+                                break;
+                            }
+                        if (i == ARRAY_SIZE(media_speeds))
+                            mbit_sec = media_speeds[i-1].mbit_sec;
+                                ifs->ifs_speed = mbit_sec;
+                        VSPEW("iface %s media cur 0x%x mask 0x%x status 0x%x active 0x%x count=%d: %d mbit/sec",ifs->ifs_name,media.ifm_current,media.ifm_mask,media.ifm_status,media.ifm_active,media.ifm_count,mbit_sec);
+                    }
                     close(s);
                 }
             }
@@ -307,6 +383,7 @@ void probe_net(
             unsigned long delta_in_p = ifix(ipackets) - state->net_tot_ipax;
             unsigned long delta_out_p = ifix(opackets) - state->net_tot_opax;
 
+            state->net_speed_mbits = ifs->ifs_speed;
             update_net_statistics(
                 state,delta_in_b,delta_out_b,delta_in_p,delta_out_p
             );

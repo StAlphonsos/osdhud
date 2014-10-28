@@ -64,7 +64,6 @@ struct ifcount {
 
 struct ifstat {
     char        ifs_name[IFNAMSIZ];    /* interface name */
-    char        ifs_description[IFDESCRSIZE];
     struct ifcount    ifs_cur;
     struct ifcount    ifs_old;
     struct ifcount    ifs_now;
@@ -80,6 +79,16 @@ struct openbsd_data {
 };
 
 static int pageshift;
+
+/*
+ * This is my first attempt at a table that maps media flags to
+ * maximum interface speeds.  I gleaned most of these clues from
+ * if_media.h, if.h, the netintro(4) and ifmedia(4) man pages and a
+ * few other places in the system source.  It definitely needs some
+ * work; many of the mbit/sec numbers in the table are probably not
+ * quite right but I don't have Internet access as I write this so I
+ * can't look things up easily...
+ */
 
 #define M_ETHER(ttt)    IFM_ETHER|IFM_##ttt
 #define M_FDDI(ttt)     IFM_FDDI|IFM_FDDI_##ttt
@@ -104,8 +113,8 @@ static struct { int bits; int mbit_sec; } media_speeds[] = {
     { M_ETHER(10G_SR),            10 },
     { M_ETHER(10G_CX4),           10 },
     { M_ETHER(2500_SX),         2500 },
-    { M_ETHER(10G_T),          10000 },
-    { M_ETHER(10G_SFP_CU),     10000 },
+    { M_ETHER(10G_T),           1000 },
+    { M_ETHER(10G_SFP_CU),      1000 },
 
     /* FDDI ?  Don't know speeds, no net access now, just guessing XXX */
 
@@ -133,7 +142,7 @@ static struct { int bits; int mbit_sec; } media_speeds[] = {
 
     /* XXX add more later */
 
-    { 0,                          10 }, /* default !? */
+    { 0,                          10 }, /* default for the 1st world :-) */
 };
 
 void
@@ -303,6 +312,7 @@ void probe_net(
             ifm.ifm_type != RTM_IFINFO ||
             !(ifm.ifm_addrs & RTA_IFP))
             continue;
+        /* Expand array of ifs as needed */
         if (ifm.ifm_index >= nifs) {
             struct ifstat *newstats = realloc(
                 ifstats,(ifm.ifm_index + 4) * sizeof(struct ifstat)
@@ -313,42 +323,27 @@ void probe_net(
                 bzero(&ifstats[nifs], sizeof(*ifstats));
         }
         ifs = &ifstats[ifm.ifm_index];
-        if (ifs->ifs_name[0] == '\0') {
+        if (ifs->ifs_name[0] == '\0') { /* index not seen yet */
             bzero(&info,sizeof(info));
             rt_getaddrinfo(
                 (struct sockaddr *)((struct if_msghdr *)next + 1),
                 ifm.ifm_addrs, info);
             sdl = (struct sockaddr_dl *)info[RTAX_IFP];
-            if (sdl && sdl->sdl_family == AF_LINK &&
-                sdl->sdl_nlen > 0) {
-                struct ifreq ifrdesc;
-                char ifdescr[IFDESCRSIZE];
+            if (sdl && sdl->sdl_family == AF_LINK && sdl->sdl_nlen > 0) {
                 int s;
                 struct ifmediareq media;
 
-                bcopy(sdl->sdl_data, ifs->ifs_name,
-                      sdl->sdl_nlen);
+                /* Create a socket to issue SIOCGIFMEDIA on */
+                bcopy(sdl->sdl_data,ifs->ifs_name,sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
-
-                /* Get the interface description and speed if possible */
-                memset(&ifrdesc, 0, sizeof(ifrdesc));
-                strlcpy(ifrdesc.ifr_name,ifs->ifs_name,
-                        sizeof(ifrdesc.ifr_name));
-                ifrdesc.ifr_data = (caddr_t)&ifdescr;
-
-                memset(&media,0,sizeof(media));
+                /* Get the interface speed if possible */
+                bzero(&media,sizeof(media));
                 strlcpy(media.ifm_name,ifs->ifs_name,sizeof(media.ifm_name));
-
                 s = socket(AF_INET, SOCK_DGRAM, 0);
                 if (s != -1) {
-                    if (ioctl(s, SIOCGIFDESCR, &ifrdesc) == 0)
-                        strlcpy(ifs->ifs_description,
-                            ifrdesc.ifr_data,
-                            sizeof(ifs->ifs_description));
                     if (ioctl(s,SIOCGIFMEDIA,&media) == 0) {
-                        int act = media.ifm_active & 0xff;
+                        int act = media.ifm_active & 0xff; /* low 8 bits */
                         int mbit_sec = 0;
-                        int i;
 
                         for (i = 0; i < ARRAY_SIZE(media_speeds); i++)
                             if (media_speeds[i].bits == act) {
@@ -367,7 +362,7 @@ void probe_net(
                 continue;
         }
         num_ifs++;
-#define ifix(nn) ifm.ifm_data.ifi_##nn
+#define ifix(x) ifm.ifm_data.ifi_##x
         ifs->ifs_cur.ifc_flags = ifm.ifm_flags;
         ifs->ifs_cur.ifc_state = ifm.ifm_data.ifi_link_state;
         ifs->ifs_flag++;
@@ -402,6 +397,7 @@ void probe_net(
         else
             ifs->ifs_name[0] = '\0';
     }
+    free(buf);
     os_data->ifstats = ifstats;
     os_data->nifs = nifs;
 }

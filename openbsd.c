@@ -330,7 +330,7 @@ void probe_net(
                       sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
 
-                /* Get the interface description */
+                /* Get the interface description and speed if possible */
                 memset(&ifrdesc, 0, sizeof(ifrdesc));
                 strlcpy(ifrdesc.ifr_name,ifs->ifs_name,
                         sizeof(ifrdesc.ifr_name));
@@ -357,7 +357,7 @@ void probe_net(
                             }
                         if (i == ARRAY_SIZE(media_speeds))
                             mbit_sec = media_speeds[i-1].mbit_sec;
-                                ifs->ifs_speed = mbit_sec;
+                        ifs->ifs_speed = mbit_sec;
                         VSPEW("iface %s media cur 0x%x mask 0x%x status 0x%x active 0x%x count=%d: %d mbit/sec",ifs->ifs_name,media.ifm_current,media.ifm_mask,media.ifm_status,media.ifm_active,media.ifm_count,mbit_sec);
                     }
                     close(s);

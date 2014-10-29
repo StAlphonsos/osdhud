@@ -146,6 +146,7 @@ typedef struct osdhud_state {
     float               swap_used_percent;
     int                 battery_missing:1;
     int                 battery_life;
+
     char               *battery_state;
     int                 battery_time;
     unsigned long       uptime_secs;

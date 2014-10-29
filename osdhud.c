@@ -255,13 +255,21 @@ static void display_swap(
 static void display_net(
     osdhud_state_t     *state)
 {
-    char *label = state->net_iface? state->net_iface: "net";
+    char *iface = state->net_iface? state->net_iface: "net";
+    int left, off, n;
+    char label[128] = { 0 };
+    char details[128] = { 0 };
     float net_kbps = state->net_ikbps + state->net_okbps;
     float net_pxps = state->net_ipxps + state->net_opxps;
     char unit = 'k';
     float unit_div = 1.0;
     float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
+    int percent = max_kbps ? (int)(100 * (net_kbps / max_kbps)) : 0;
 
+    /*
+     * If there are gigabytes or megabytes flying by then
+     * switch to the appropriate unit.
+     */
     if (net_kbps > state->net_peak_kbps)
         state->net_peak_kbps = net_kbps;
     if (net_pxps > state->net_peak_pxps)
@@ -273,22 +281,41 @@ static void display_net(
         unit = 'm';
         unit_div = KILO;
     }
-    xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,
-        "%s %.2f %cB/s (%.2f in + %.2f out)",
-        label,net_kbps/unit_div,unit,state->net_ikbps/unit_div,
-        state->net_okbps/unit_div
-    );
-    if (max_kbps) {
-        int percent = (int)(100 * (net_kbps / max_kbps));
-
-        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+    /* Put together the label */
+    left = sizeof(label);
+    off = snprintf(label,left,"net %s",iface);
+    assert(off < left);
+    left -= off;
+    if (max_kbps && percent) {
+        n = snprintf(&label[off],left," %3d%%",percent);
+        assert(n < left);
+        left -= n;
+        off += n;
+    }
+    /* Put together the details string, as short as possible */
+    if ((unsigned long)net_kbps) {
+        left = sizeof(details);
+        off = snprintf(
+            details,left,"%lu %cB/s (%lu + %lu; %lu px/s: %lu + %lu)",
+            (unsigned long)(net_kbps/unit_div),unit,
+            (unsigned long)(state->net_ikbps/unit_div),
+            (unsigned long)(state->net_okbps/unit_div),
+            (unsigned long)net_pxps,
+            (unsigned long)state->net_ipxps,
+            (unsigned long)state->net_opxps
+        );
+        assert(off < left);
+        left -= off;
+    } else {
+        assert(
+            strlcpy(details,"-no activity-",sizeof(details)) < sizeof(details)
+        );
     }
     xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,
-        "%s %.2f px/s (%.2f in + %.2f out)",
-        label,net_pxps,state->net_ipxps,state->net_opxps
+        state->osd,state->disp_line++,XOSD_printf,"%s %s",label,details
     );
+    if (max_kbps)
+        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
 }
 
 static void display_battery(

@@ -466,8 +466,12 @@ void probe_battery(
             ac = "?";
             break;
         }
-        free(state->battery_state);
-        assert(asprintf(&state->battery_state,"%s/%s",bat,ac) > 0);
+        assert(
+            snprintf(
+                state->battery_state,sizeof(state->battery_state),
+                "%s/%s",bat,ac
+            ) < sizeof(state->battery_state)
+        );
         state->battery_life = info.battery_life;
         state->battery_time = info.minutes_left;
     }

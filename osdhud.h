@@ -146,8 +146,7 @@ typedef struct osdhud_state {
     float               swap_used_percent;
     int                 battery_missing:1;
     int                 battery_life;
-
-    char               *battery_state;
+    char                battery_state[32];
     int                 battery_time;
     unsigned long       uptime_secs;
     unsigned long       last_t;
@@ -224,6 +223,16 @@ typedef struct osdhud_state {
         else                                                            \
             syslog(LOG_ERR,"%s",msg);                                   \
     }
+
+/*
+ * TXT_xxx constants, should probably just internationalize properly
+ */
+
+#define TXT__QUIET_             "-quiet-"
+#define TXT_TIME_UNKNOWN        "time unknown"
+#define TXT__UNKNOWN_           "-unknown-"
+#define TXT__STUCK_             "-stuck-"
+#define TXT__BLINK_             "-blink-"
 
 /* shared across operating systems */
 void update_net_statistics(

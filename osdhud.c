@@ -198,6 +198,68 @@ static unsigned long time_in_milliseconds(
 }
 
 /**
+ * Turn a number of seconds elapsed into a human-readable string.
+ * e.g. "10 days 1 hour 23 mins 2 secs".  We have an snprintf-style
+ * API: buf,bufsiz specify a buffer and its size.  If our return value
+ * is less than bufsiz then buf was big enough and contains a
+ * NUL-terminatd string whose length is our return value.  If our
+ * return value is greater than bufsiz then buf was too small.  Sadly
+ * our return value is not useful for determining how large to make
+ * buf, but in practice anything over 35 bytes should be large enough.
+ */
+int elapsed(
+    char               *buf,
+    int                 bufsiz,
+    unsigned long       secs)
+{
+    unsigned long days;
+    unsigned long hours;
+    unsigned long mins;
+    size_t nleft = bufsiz;
+    size_t off = 0;
+
+    days = secs / SECSPERDAY;
+    secs %= SECSPERDAY;
+    hours = secs / SECSPERHOUR;
+    secs %= SECSPERHOUR;
+    mins = secs / SECSPERMIN;
+    secs %= SECSPERMIN;
+
+#define catsup(var)                                                     \
+        if (var) {                                                      \
+            size_t _catsup_n;                                           \
+            char _catsup_u[10] = #var;                                  \
+            if (off) {                                                  \
+                if (nleft <= 2) {                                       \
+                    off = bufsiz+1;                                     \
+                    goto DONE;                                          \
+                }                                                       \
+                (void) strlcat(&buf[off]," ",nleft);                    \
+                nleft -= 1;                                             \
+                off += 1;                                               \
+            }                                                           \
+            if (var == 1) _catsup_u[strlen(#var)-1] = 0;                \
+            _catsup_n = snprintf(                                       \
+                &buf[off],nleft,"%lu %s",var,_catsup_u);                \
+            if (_catsup_n >= nleft) {                                   \
+                off = bufsiz+1;                                         \
+                goto DONE;                                              \
+            }                                                           \
+            off += _catsup_n;                                           \
+            nleft -= _catsup_n;                                         \
+        }
+
+    catsup(days);
+    catsup(hours);
+    catsup(mins);
+    catsup(secs);
+#undef catsup
+
+ DONE:
+    return off;
+}
+
+/**
  * Probe data and gather statistics
  *
  * This function invokes probe_xxx() routines defined in the per-OS
@@ -255,7 +317,7 @@ static void display_swap(
 static void display_net(
     osdhud_state_t     *state)
 {
-    char *iface = state->net_iface? state->net_iface: "net";
+    char *iface = state->net_iface? state->net_iface: "-";
     int left, off, n;
     char label[128] = { 0 };
     char details[128] = { 0 };
@@ -282,33 +344,32 @@ static void display_net(
         unit_div = KILO;
     }
     /* Put together the label */
-    left = sizeof(label);
-    off = snprintf(label,left,"net %s",iface);
-    assert(off < left);
-    left -= off;
-    if (max_kbps && percent) {
-        n = snprintf(&label[off],left," %3d%%",percent);
-        assert(n < left);
-        left -= n;
-        off += n;
-    }
+    assert(
+        snprintf(label,sizeof(label),"net (%s):",iface) < sizeof(label)
+    );
     /* Put together the details string, as short as possible */
     if ((unsigned long)net_kbps) {
         left = sizeof(details);
-        off = snprintf(
-            details,left,"%lu %cB/s (%lu + %lu; %lu px/s: %lu + %lu)",
+        off = 0;
+        if (max_kbps && percent) {
+            n = snprintf(&details[off],left,"%3d%% ",percent);
+            assert(n < left);
+            left -= n;
+            off += n;
+        }
+        n = snprintf(
+            &details[off],left,"%lu %cB/s (%lu px/s: %lu + %lu)",
             (unsigned long)(net_kbps/unit_div),unit,
-            (unsigned long)(state->net_ikbps/unit_div),
-            (unsigned long)(state->net_okbps/unit_div),
             (unsigned long)net_pxps,
             (unsigned long)state->net_ipxps,
             (unsigned long)state->net_opxps
         );
-        assert(off < left);
-        left -= off;
+        assert(n < left);
+        left -= n;
+        off += n;
     } else {
         assert(
-            strlcpy(details,"-no activity-",sizeof(details)) < sizeof(details)
+            strlcpy(details,TXT__QUIET_,sizeof(details)) < sizeof(details)
         );
     }
     xosd_display(
@@ -321,14 +382,20 @@ static void display_net(
 static void display_battery(
     osdhud_state_t     *state)
 {
-    char *charging = state->battery_state ? state->battery_state : "-unknown-";
+    char *charging = state->battery_state[0] ?
+        state->battery_state : TXT__UNKNOWN_;
+    char mins[128] = { 0 };
 
     if (state->battery_missing)
         return;
+    if (state->battery_time < 0) {
+        assert(strlcpy(mins,TXT_TIME_UNKNOWN,sizeof(mins)) < sizeof(mins));
+    } else {
+        assert(elapsed(mins,sizeof(mins),state->battery_time*60)<sizeof(mins));
+    }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
-        "battery: %s, %d%% charged (%d mins)",charging,
-        state->battery_life,state->battery_time
+        "battery: %s, %d%% charged (%s)",charging,state->battery_life,mins
     );
     xosd_display(
         state->osd,state->disp_line++,XOSD_percentage,state->battery_life
@@ -340,44 +407,9 @@ static void display_uptime(
 {
     if (state->sys_uptime) {
         unsigned long secs = state->sys_uptime;
-        unsigned long days;
-        unsigned long hours;
-        unsigned long mins;
-        char upbuf[1024] = { 0 };
-        size_t nleft = sizeof(upbuf);
-        size_t off = 0;
+        char upbuf[64] = { 0 };
 
-        days = secs / SECSPERDAY;
-        secs %= SECSPERDAY;
-        hours = secs / SECSPERHOUR;
-        secs %= SECSPERHOUR;
-        mins = secs / SECSPERMIN;
-        secs %= SECSPERMIN;
-
-#define catsup(var)                                                     \
-        if (var) {                                                      \
-            size_t _catsup_n;                                           \
-            char _catsup_u[10] = #var;                                  \
-            if (off) {                                                  \
-                assert(nleft > 2);                                      \
-                strlcat(&upbuf[off]," ",nleft);                         \
-                nleft -= 1;                                             \
-                off += 1;                                               \
-            }                                                           \
-            if (var == 1) _catsup_u[strlen(#var)-1] = 0;                \
-            _catsup_n = snprintf(                                       \
-                &upbuf[off],nleft,"%lu %s",var,_catsup_u);              \
-            assert(_catsup_n < nleft);                                  \
-            off += _catsup_n;                                           \
-            nleft -= _catsup_n;                                         \
-        }
-
-        catsup(days);
-        catsup(hours);
-        catsup(mins);
-        catsup(secs);
-#undef catsup
-
+        assert(elapsed(upbuf,sizeof(upbuf),secs) < sizeof(upbuf));
         xosd_display(state->osd,state->disp_line++,XOSD_printf,"up %s",upbuf);
     }
 }
@@ -421,7 +453,7 @@ static void display_hudmeta(
 
     if (state->stuck)
         assert(
-            strlcpy(left_s,"-stuck-",sizeof(left_s)) < sizeof(left_s)
+            strlcpy(left_s,TXT__STUCK_,sizeof(left_s)) < sizeof(left_s)
         );
     else if (state->countdown) {
         if (left_secs)
@@ -431,7 +463,7 @@ static void display_hudmeta(
             );
         else
             assert(
-                strlcpy(left_s,"-blink-",sizeof(left_s)) < sizeof(left_s)
+                strlcpy(left_s,TXT__BLINK_,sizeof(left_s)) < sizeof(left_s)
             );
     }
 #ifndef USE_TWO_OSDS
@@ -464,17 +496,18 @@ static void display(
 
 #define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgt?"
 
-#define USAGE_MSG "usage: %s [-vkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
+#define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
-       -v verbose | -k kill server | -F run in foreground\n\
-       -D down hud | -U up hud | -S stick hud | -N unstick hud\n\
-       -n don't display at startup | -C display hud countdown\n\
-               -w don't show swap | -h,-? display this\n\
-       -T fmt   show time using strftime fmt (def: yyyy-mm-dd HH:MM:SS)\n\
+       -v verbose    | -k kill server | -F run in foreground\n\
+       -D down hud   | -U up hud      | -S stick hud | -N unstick hud\n\
+       -g debug mode | -t toggle mode | -w don't show swap\n\
+       -n don't display at startup    | -C display hud countdown\n\
+                        -h,-? display this\n\
+       -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
        -d msec  leave hud visible for millis (def: 2000)\n\
        -p msec  millis between sampling when hud is up (def: 100)\n\
        -P msec  millis between sampling when hud is down (def: 1000)\n\
-       -f font  font to use for display\n\
+       -f font  font (def: "DEFAULT_FONT")\n\
        -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
        -i iface network interface to watch\n"
 
@@ -659,7 +692,7 @@ static void init_state(
         state->okbps_ma = state->opxps_ma = NULL;
     state->battery_missing = 0;
     state->battery_life = 0;
-    state->battery_state = NULL;
+    memset(state->battery_state,0,sizeof(state->battery_state));
     state->battery_time = 0;
     state->last_t = 0;
     state->first_t = 0;
@@ -742,7 +775,6 @@ static void cleanup_state(
         state->font = NULL;
         free(state->net_iface);
         state->net_iface = NULL;
-        free(state->battery_state);
         movavg_free(state->ikbps_ma);
         state->ikbps_ma = NULL;
         movavg_free(state->okbps_ma);
@@ -978,21 +1010,22 @@ static int handle_message(
 #undef is_different
                     if (state->verbose)
                         syslog(
-                            LOG_WARNING,"up:%d dn:%d stk:%d ustk:%d",
-                            foo->up_hud,foo->down_hud,foo->stick_hud,
-                            foo->unstick_hud
+                            LOG_WARNING,"tog:%d up:%d dn:%d stk:%d ustk:%d",
+                            foo->toggle_mode,foo->up_hud,foo->down_hud,
+                            foo->stick_hud,foo->unstick_hud
                         );
-                    /* ... what to do with these ? */
-                    if (foo->up_hud || foo->stick_hud) {
+                    if (foo->toggle_mode) {
+                        /* -t overrides -S/-N */
+                        foo->stick_hud = foo->unstick_hud = 0;
+                        retval = 1;
+                        state->stuck = !state->stuck;
+                    } else if (foo->up_hud || foo->stick_hud) {
                         retval = !state->hud_is_up;
                         state->stuck = foo->stick_hud ? 1 : 0;
-                    }
-                    if (foo->down_hud)
+                    } else if (foo->down_hud)
                         retval = state->hud_is_up ? 1 : 0;
-                    if (foo->unstick_hud)
+                    else if (foo->unstick_hud)
                         state->stuck = 0;
-                    if (foo->toggle_mode)
-                        state->toggle_mode = !state->toggle_mode;
                     state->countdown = foo->countdown;
                 }
             }
@@ -1191,6 +1224,7 @@ static int pack_message(
     single_opt(up_hud,"U");
     single_opt(stick_hud,"S");
     single_opt(unstick_hud,"N");
+    single_opt(toggle_mode,"t");
     single_opt(countdown,"C");
     string_opt(font,"f");
     string_opt(net_iface,"i");

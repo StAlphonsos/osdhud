@@ -87,6 +87,7 @@ struct movavg {
 };
 
 # define MAX_WSIZE 10000 /* max size of moving average window */
+# define MAX_ALERTS_SIZE 1024
 
 typedef struct osdhud_state {
     int                 kill_server:1;
@@ -102,6 +103,8 @@ typedef struct osdhud_state {
     int                 countdown:1;
     int                 quiet_at_start:1;
     int                 toggle_mode:1;
+    int                 alerts_mode:1;
+    int                 cancel_alerts:1;
     char               *argv0;
     int                 pid;
     char               *sock_path;
@@ -112,6 +115,9 @@ typedef struct osdhud_state {
     int                 net_speed_mbits;
     char               *time_fmt;
     int                 nswap;
+    int                 min_battery_life;
+    float               max_load_avg;
+    float               max_mem_used;
     unsigned long       net_tot_ipax;
     unsigned long       net_tot_ierr;
     unsigned long       net_tot_opax;
@@ -152,6 +158,8 @@ typedef struct osdhud_state {
     unsigned long       last_t;
     unsigned long       first_t;
     unsigned long       sys_uptime;
+    int                 message_seen:1;
+    char                message[MAX_ALERTS_SIZE];
     xosd               *osd;
     int                 disp_line;
 #ifdef USE_TWO_OSDS
@@ -160,7 +168,7 @@ typedef struct osdhud_state {
     char                errbuf[1024];
 } osdhud_state_t;
 
-#define KILO 1000
+#define KILO 1024
 #define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
 
@@ -170,11 +178,15 @@ typedef struct osdhud_state {
 #define DEFAULT_NLINES 15
 #define DEFAULT_WIDTH 50
 #define DEFAULT_DISPLAY 4000
-#define DEFAULT_SHORT_PAUSE 300
-#define DEFAULT_LONG_PAUSE 1800
+#define DEFAULT_SHORT_PAUSE 100
+/*#define DEFAULT_LONG_PAUSE 1800*/
+#define DEFAULT_LONG_PAUSE DEFAULT_SHORT_PAUSE
 #define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
 #define DEFAULT_NET_MOVAVG_WSIZE 6
 #define DEFAULT_NSWAP 1
+#define DEFAULT_MIN_BATTERY_LIFE 10
+#define DEFAULT_MAX_LOAD_AVG 0.0
+#define DEFAULT_MAX_MEM_USED 0.9
 
 #define DBG1(fmt,arg1)                                                  \
     if (state->debug) {                                                 \
@@ -232,7 +244,11 @@ typedef struct osdhud_state {
 #define TXT_TIME_UNKNOWN        "time unknown"
 #define TXT__UNKNOWN_           "-unknown-"
 #define TXT__STUCK_             "-stuck-"
+#define TXT__ALERT_             "-alert-"
 #define TXT__BLINK_             "-blink-"
+#define TXT_ALERT_BATTERY_LOW   "BATTERY LOW"
+#define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
+#define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
 
 /* shared across operating systems */
 void update_net_statistics(

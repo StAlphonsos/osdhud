@@ -284,12 +284,19 @@ static void probe(
  * Display Routines
  */
 
+#define ipercent(v) ((int)(100 * (v)))
+
 static void display_load(
     osdhud_state_t     *state)
 {
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,"load: %.2f",state->load_avg
     );
+    if (state->max_load_avg) {
+        int percent = ipercent(state->load_avg/state->max_load_avg);
+
+        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+    }
 }
 
 static void display_mem(
@@ -414,6 +421,17 @@ static void display_uptime(
     }
 }
 
+static void display_message(
+    osdhud_state_t     *state)
+{
+    if (!state->message_seen && state->message[0]) {
+        xosd_display(
+            state->osd,state->disp_line++,XOSD_printf,"%s",state->message
+        );
+        state->message_seen = 1;
+    }
+}
+
 static void display_hudmeta(
     osdhud_state_t     *state)
 {
@@ -451,11 +469,14 @@ static void display_hudmeta(
         }
     }
 
-    if (state->stuck)
+    if (state->stuck) {
+        char *txt = (state->message[0] && state->alerts_mode) ?
+            TXT__ALERT_ : TXT__STUCK_;
+
         assert(
-            strlcpy(left_s,TXT__STUCK_,sizeof(left_s)) < sizeof(left_s)
+            strlcpy(left_s,txt,sizeof(left_s)) < sizeof(left_s)
         );
-    else if (state->countdown) {
+    } else if (state->countdown) {
         if (left_secs)
             assert(
                 snprintf(left_s,sizeof(left_s),"hud down in %d",left_secs) <
@@ -491,16 +512,18 @@ static void display(
     display_swap(state);
     display_net(state);
     display_battery(state);
+    display_message(state);
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgt?"
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgaAt?"
 
-#define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
+#define USAGE_MSG "usage: %s [-vgtkFDUSNCwaAh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
-       -v verbose    | -k kill server | -F run in foreground\n\
-       -D down hud   | -U up hud      | -S stick hud | -N unstick hud\n\
-       -g debug mode | -t toggle mode | -w don't show swap\n\
+       -v verbose      | -k kill server | -F run in foreground\n\
+       -D down hud     | -U up hud      | -S stick hud | -N unstick hud\n\
+       -g debug mode   | -t toggle mode | -w don't show swap\n\
+       -a alerts mode                 | -A cancel alerts mode\n\
        -n don't display at startup    | -C display hud countdown\n\
                         -h,-? display this\n\
        -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
@@ -532,7 +555,7 @@ static int usage(
     return fail;
 }
 
-/**
+/*
  * Parse command-line arguments into osdhud_state_t structure
  */
 static int parse(
@@ -630,6 +653,14 @@ static int parse(
             state->toggle_mode = 1;
             DBG1("parsed -%c",ch);
             break;
+        case 'a':
+            state->alerts_mode = 1;
+            DBG1("parsed -%c",ch);
+            break;
+        case 'A':
+            state->cancel_alerts = 1;
+            DBG1("parsed -%c",ch);
+            break;
         case '?':                       /* help */
         case 'h':                       /* ditto */
             fail = usage(state,NULL);
@@ -658,7 +689,8 @@ static void init_state(
     state->kill_server = state->down_hud = state->up_hud = state->countdown =
         state->stick_hud = state->unstick_hud = state->foreground =
         state->hud_is_up = state->server_quit = state->stuck = state->verbose =
-        state->debug = state->toggle_mode = 0;
+        state->debug = state->toggle_mode = state->alerts_mode = 
+        state->cancel_alerts = 0;
     state->pid = 0;
     state->sock_fd = -1;
     state->sock_path = NULL;
@@ -680,6 +712,9 @@ static void init_state(
     state->display_msecs = DEFAULT_DISPLAY;
     state->t0_msecs = 0;
     state->nswap = DEFAULT_NSWAP;
+    state->min_battery_life = DEFAULT_MIN_BATTERY_LIFE;
+    state->max_load_avg = DEFAULT_MAX_LOAD_AVG;
+    state->max_mem_used = DEFAULT_MAX_MEM_USED;
     state->short_pause_msecs = DEFAULT_SHORT_PAUSE;
     state->long_pause_msecs = DEFAULT_LONG_PAUSE;
     state->net_movavg_wsize = DEFAULT_NET_MOVAVG_WSIZE;
@@ -698,6 +733,8 @@ static void init_state(
     state->first_t = 0;
     state->sys_uptime = 0;
     state->osd = NULL;
+    memset(state->message,0,sizeof(state->message));
+    state->message_seen = 0;
 #ifdef USE_TWO_OSDS
     state->osd2 = NULL;
 #endif
@@ -733,6 +770,8 @@ static osdhud_state_t *create_state(
         set_field(stuck);
         set_field(debug);
         set_field(toggle_mode);
+        set_field(alerts_mode);
+        set_field(cancel_alerts);
         set_field(countdown);
         dup_field(sock_path);
         cpy_field(addr);
@@ -1027,6 +1066,10 @@ static int handle_message(
                     else if (foo->unstick_hud)
                         state->stuck = 0;
                     state->countdown = foo->countdown;
+                    if (foo->cancel_alerts)
+                        state->alerts_mode = 0;
+                    else if (foo->alerts_mode)
+                        state->alerts_mode = 1;
                 }
             }
             if (state->verbose)
@@ -1045,6 +1088,40 @@ static int handle_message(
             retval,state->hud_is_up
         );
     return retval;
+}
+
+static int check_alerts(
+    osdhud_state_t     *state)
+{
+    int nalerts = 0;
+
+    memset(state->message,0,sizeof(state->message));
+    state->message_seen = 0;
+
+#define catmsg(xx)                                                      \
+    do {                                                                \
+        if (state->message[0])                                          \
+            assert(                                                     \
+                strlcat(state->message,", ",sizeof(state->message))     \
+                < sizeof(state->message)                                \
+            );                                                          \
+        assert(                                                         \
+            strlcat(state->message,xx,sizeof(state->message))           \
+            < sizeof(state->message)                                    \
+        );                                                              \
+        nalerts++;                                                      \
+    } while (0);
+
+    if (!state->battery_missing&&(state->battery_life<state->min_battery_life))
+        catmsg(TXT_ALERT_BATTERY_LOW);
+    if (state->max_load_avg&&(ipercent(state->load_avg/state->max_load_avg)>40))
+        catmsg(TXT_ALERT_LOAD_HIGH);
+    if (state->max_mem_used && (state->mem_used_percent > state->max_mem_used))
+        catmsg(TXT_ALERT_MEM_LOW);
+
+#undef catmsg
+
+    return nalerts;
 }
 
 /**
@@ -1084,6 +1161,7 @@ static int check(
         int pause_secs;
         int pause_usecs;
         fd_set rfds;
+        int have_alerts;
 
         FD_ZERO(&rfds);
         FD_SET(state->sock_fd,&rfds);
@@ -1118,12 +1196,6 @@ static int check(
                 int now = time_in_milliseconds();
                 int delta_d = (now - state->t0_msecs);
 
-                if (state->verbose)
-                    syslog(
-                        LOG_WARNING,
-                        "HUD up, dt %d, duration %d, stuck %d",
-                        delta_d,state->duration_msecs,state->stuck
-                    );
                 if (!state->stuck && (delta_d >= state->duration_msecs))
                     quit_loop = 1;
             } /* otherwise done=1 will force us to sample and pause again */
@@ -1147,6 +1219,11 @@ static int check(
         }
         bang_bang = 0;
 #endif
+        have_alerts = check_alerts(state);
+        if (have_alerts && state->alerts_mode && !state->hud_is_up) {
+            quit_loop = done = 1;
+            state->stuck = 1;           /* alerts force them to unstick...? */
+        }
     } while (!done && !quit_loop);
     return quit_loop;
 }
@@ -1219,12 +1296,15 @@ static int pack_message(
     }
 
     single_opt(verbose,"v");
+    single_opt(debug,"g");
     single_opt(kill_server,"k");
     single_opt(down_hud,"D");
     single_opt(up_hud,"U");
     single_opt(stick_hud,"S");
     single_opt(unstick_hud,"N");
     single_opt(toggle_mode,"t");
+    single_opt(alerts_mode,"a");
+    single_opt(cancel_alerts,"A");
     single_opt(countdown,"C");
     string_opt(font,"f");
     string_opt(net_iface,"i");
@@ -1409,9 +1489,6 @@ static void hud_up(
     state->duration_msecs = state->display_msecs;
 }
 
-/**
- * Bring down the HUD
- */
 static void hud_down(
     osdhud_state_t     *state)
 {
@@ -1500,7 +1577,7 @@ static void setup_daemon(
         closelog();
         exit(1);
     }
-    if (bind(state->sock_fd,(struct sockaddr *)&state->addr,sizeof(state->addr))) {
+    if(bind(state->sock_fd,(struct sockaddr*)&state->addr,sizeof(state->addr))){
         perror("bind");
         exit(1);
     }

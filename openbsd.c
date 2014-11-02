@@ -78,6 +78,7 @@ struct openbsd_data {
     struct ifstat      *ifstats;
     struct timeval      boottime;
     struct swapent     *swap_devices;
+    int                 ncpus;
 };
 
 static int pageshift;
@@ -195,6 +196,13 @@ void probe_init(
         assert(obsd->swap_devices);
     }
 
+    mib[0] = CTL_HW;
+    mib[1] = HW_NCPU;
+    size = sizeof(obsd->ncpus);
+    assert(!sysctl(mib,2,&obsd->ncpus,&size,NULL,0));
+    if (!state->max_load_avg)
+        state->max_load_avg = 2.0 * (float)obsd->ncpus; /* xxx 2? yeah... */
+    VSPEW("ncpus=%d, max load avg=%f",obsd->ncpus,state->max_load_avg);
     state->per_os_data = (void *)obsd;
 }
 

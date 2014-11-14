@@ -15,7 +15,7 @@
 
 /* LICENSE:
  *
- * Copyright (C) 1999-2014 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014 by attila <attila@stalphonsos.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -79,6 +79,7 @@ struct openbsd_data {
     struct timeval      boottime;
     struct swapent     *swap_devices;
     int                 ncpus;
+    Pvoid_t             groups;
 };
 
 static int pageshift;
@@ -203,6 +204,7 @@ void probe_init(
     if (!state->max_load_avg)
         state->max_load_avg = 2.0 * (float)obsd->ncpus; /* xxx 2? yeah... */
     VSPEW("ncpus=%d, max load avg=%f",obsd->ncpus,state->max_load_avg);
+    obsd->groups = NULL;
     state->per_os_data = (void *)obsd;
 }
 
@@ -211,11 +213,24 @@ void probe_cleanup(
 {
     if (state->per_os_data) {
         struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+        Word_t *jvp = NULL;
+        int rc = 0;
+        uint8_t group[IFNAMSIZ] = { 0 };
 
         free(obsd->swap_devices);
         free(obsd->ifstats);
         obsd->ifstats = NULL;
         obsd->nifs = 0;
+        JSLF(jvp,obsd->groups,group);
+        while (jvp) {
+            Pvoid_t ifaces = *(Pvoid_t *)jvp;
+
+            JSLFA(rc,ifaces);
+            *jvp = 0;
+            JSLN(jvp,obsd->groups,group);
+        }
+        JSLFA(rc,obsd->groups);
+        obsd->groups = NULL;
         free(obsd);
     }
 }
@@ -285,15 +300,15 @@ void probe_net(
     struct sockaddr_dl *sdl;
     int num_ifs = 0;
     struct ifstat *ifs;
+    unsigned long tot_delta_in_b = 0;
+    unsigned long tot_delta_out_b = 0;
+    unsigned long tot_delta_in_p = 0;
+    unsigned long tot_delta_out_p = 0;
+    int interest;
 
     /*
      * This logic lifted directly from fetchifstat() in
-     * /usr/src/usr.bin/systat/if.c as of OpenBSD 5.5.  At first I
-     * thought it was ugly and strange but after reading the man pages
-     * and the source I've come to the conclusion that it is as it
-     * should be... just needed to bring myself up to date from my
-     * 1990's level of clue.  The inline commentary is mine, mainly to
-     * help me keep it straight vs. FreeBSD.
+     * /usr/src/usr.bin/systat/if.c ca. OpenBSD 5.5.
      */
 
     /* Ask how much space will be needed for the whole array */
@@ -322,7 +337,7 @@ void probe_net(
             ifm.ifm_type != RTM_IFINFO ||
             !(ifm.ifm_addrs & RTA_IFP))
             continue;
-        /* Expand array of ifs as needed */
+        /* Expand array of ifs as needed so it includes ifm_index */
         if (ifm.ifm_index >= nifs) {
             struct ifstat *newstats = realloc(
                 ifstats,(ifm.ifm_index + 4) * sizeof(struct ifstat)
@@ -342,13 +357,16 @@ void probe_net(
             if (sdl && sdl->sdl_family == AF_LINK && sdl->sdl_nlen > 0) {
                 int s;
                 struct ifmediareq media;
+                struct ifgroupreq groups;
 
-                /* Create a socket to issue SIOCGIFMEDIA on */
+                /* Create a socket to issue ioctls on */
                 bcopy(sdl->sdl_data,ifs->ifs_name,sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
-                /* Suss interface speed if possible */
+                /* Suss interface speed and group if possible */
                 bzero(&media,sizeof(media));
-                strlcpy(media.ifm_name,ifs->ifs_name,sizeof(media.ifm_name));
+                assert_strlcpy(media.ifm_name,ifs->ifs_name);
+                bzero(&groups,sizeof(groups));
+                assert_strlcpy(groups.ifgr_name,ifs->ifs_name);
                 s = socket(AF_INET, SOCK_DGRAM, 0);
                 if (s != -1) {
                     if (ioctl(s,SIOCGIFMEDIA,&media) == 0) {
@@ -361,44 +379,107 @@ void probe_net(
                                 break;
                             }
                         if (i == ARRAY_SIZE(media_speeds))
+                            /* Last entry is default */
                             mbit_sec = media_speeds[i-1].mbit_sec;
                         ifs->ifs_speed = mbit_sec;
                         VSPEW("iface %s media cur 0x%x mask 0x%x status 0x%x active 0x%x count=%d: %d mbit/sec",ifs->ifs_name,media.ifm_current,media.ifm_mask,media.ifm_status,media.ifm_active,media.ifm_count,mbit_sec);
                     }
+                    if (state->net_iface && !ioctl(s,SIOCGIFGROUP,&groups)) {
+                        int ngroups = groups.ifgr_len;
+
+                        groups.ifgr_groups =
+                            (struct ifg_req *)calloc(
+                                ngroups,sizeof(struct ifg_req)
+                            );
+                        assert(groups.ifgr_groups);
+                        if (ioctl(s,SIOCGIFGROUP,&groups)) {
+                            perror("ioctl(SIOCGIFGROUP");
+                        } else {
+                            /* We build a hash of hashes (effectively):
+                             *    { group_name -> { iface_name -> 1, ... } }
+                             */
+                            for (i = 0; i < groups.ifgr_len; i++) {
+                                char *group = groups.ifgr_groups[i].ifgrq_group;
+                                Pvoid_t ifaces = NULL;
+                                Word_t *jvp = NULL, *jvp2 = NULL;
+
+                                VSPEW("%s group#%d/%d %s",ifs->ifs_name,i,groups.ifgr_len,group);
+                                JSLG(jvp,os_data->groups,group);
+                                ifaces = jvp ? *(Pvoid_t *)jvp : NULL;
+                                JSLG(jvp2,ifaces,ifs->ifs_name);
+                                if (!jvp2) {
+                                    JSLI(jvp2,ifaces,ifs->ifs_name);
+                                    assert(jvp2);
+                                    *jvp2 = 1;
+                                }
+                                if (!jvp)
+                                    JSLI(jvp,os_data->groups,group);
+                                assert(jvp);
+                                *jvp = (Word_t)ifaces;
+                            }
+                        }
+                        free(groups.ifgr_groups);
+                        groups.ifgr_groups = NULL;
+                    }
                     close(s);
                 }
             }
-            if (ifs->ifs_name[0] == '\0')
+            if (ifs->ifs_name[0] == '\0') /* was not interesting */
                 continue;
         }
         num_ifs++;
-#define ifix(x) ifm.ifm_data.ifi_##x
+        /* Am not using all of these yet... */
+#define ifi_x(x) ifm.ifm_data.ifi_##x
         ifs->ifs_cur.ifc_flags = ifm.ifm_flags;
         ifs->ifs_cur.ifc_state = ifm.ifm_data.ifi_link_state;
         ifs->ifs_flag++;
+        /*
+         * If no interface specification was given we pick the first
+         * non-loopback interface we find as the one we care about.
+         * Arbitrary.
+         */
         if (!state->net_iface && strncmp(ifs->ifs_name,"lo",2)) {
             /* first non-loopback interface */
             state->net_iface = strdup(ifs->ifs_name);
             VSPEW("choosing first non-loopback interface: %s",state->net_iface);
         }
-        if (state->net_iface && !strcmp(state->net_iface,ifs->ifs_name)) {
-            /* this is our boy */
-            unsigned long delta_in_b = ifix(ibytes) - state->net_tot_ibytes;
-            unsigned long delta_out_b = ifix(obytes) - state->net_tot_obytes;
-            unsigned long delta_in_p = ifix(ipackets) - state->net_tot_ipax;
-            unsigned long delta_out_p = ifix(opackets) - state->net_tot_opax;
+        interest = state->net_iface && !strcmp(state->net_iface,ifs->ifs_name);
+        if (state->net_iface && !interest) {
+            /* Check if the interface name they gave us is a group name */
+            Word_t *jvp = (Word_t *)0;
+
+            /* Use -i value as key into group hash */
+            JSLG(jvp,os_data->groups,state->net_iface);
+            if (jvp) {
+                Pvoid_t group_ifaces = *(Pvoid_t *)jvp;
+
+                /* Now check for this interface in that group */
+                jvp = NULL;
+                JSLG(jvp,group_ifaces,ifs->ifs_name);
+                interest = !!jvp;
+            }
+        }
+        if (interest) {
+            unsigned long delta_in_b = ifi_x(ibytes) - state->net_tot_ibytes;
+            unsigned long delta_out_b = ifi_x(obytes) - state->net_tot_obytes;
+            unsigned long delta_in_p = ifi_x(ipackets) - state->net_tot_ipax;
+            unsigned long delta_out_p = ifi_x(opackets) - state->net_tot_opax;
 
             state->net_speed_mbits = ifs->ifs_speed;
-            update_net_statistics(
-                state,delta_in_b,delta_out_b,delta_in_p,delta_out_p
-            );
-            state->net_tot_ibytes = ifix(ibytes);
-            state->net_tot_obytes = ifix(obytes);
-            state->net_tot_ipax = ifix(ipackets);
-            state->net_tot_opax = ifix(opackets);
+            tot_delta_in_b += delta_in_b;
+            tot_delta_out_b += delta_out_b;
+            tot_delta_in_p += delta_in_p;
+            tot_delta_out_p += delta_out_p;
+            state->net_tot_ibytes = ifi_x(ibytes);
+            state->net_tot_obytes = ifi_x(obytes);
+            state->net_tot_ipax = ifi_x(ipackets);
+            state->net_tot_opax = ifi_x(opackets);
         }
-#undef ifix
+#undef ifi_x
     }
+    update_net_statistics(
+        state,tot_delta_in_b,tot_delta_out_b,tot_delta_in_p,tot_delta_out_p
+    );
     /* remove unreferenced interfaces */
     for (i = 0; i < nifs; i++) {
         ifs = &ifstats[i];
@@ -410,6 +491,11 @@ void probe_net(
     free(buf);
     os_data->ifstats = ifstats;
     os_data->nifs = nifs;
+}
+
+void probe_disk(
+    osdhud_state_t     *state)
+{
 }
 
 /* c.f. apm(4) */
@@ -474,12 +560,7 @@ void probe_battery(
             ac = "?";
             break;
         }
-        assert(
-            snprintf(
-                state->battery_state,sizeof(state->battery_state),
-                "%s/%s",bat,ac
-            ) < sizeof(state->battery_state)
-        );
+        assert_snprintf(state->battery_state,"%s/%s",bat,ac);
         state->battery_life = info.battery_life;
         state->battery_time = info.minutes_left;
     }

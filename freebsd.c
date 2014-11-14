@@ -145,6 +145,11 @@ void probe_net(
         syslog(LOG_WARNING,"no useful network interfaces / %d seen",ifcount);
 }
 
+void probe_disk(
+    osdhud_state_t     *state)
+{
+}
+
 void probe_battery(
     osdhud_state_t     *state)
 {

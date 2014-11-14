@@ -7,7 +7,7 @@
 
 /* LICENSE:
  *
- * Copyright (C) 1999-2014 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014 by attila <attila@stalphonsos.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -60,6 +60,7 @@
 #include <sys/un.h>
 
 #include <xosd.h>
+#include <Judy.h>
 
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
@@ -78,6 +79,9 @@
 /*#define CREATE_EACH_TIME 1*/
 #define USE_TWO_OSDS 1/**/
 
+/*
+ * A moving average c.f. movavg_* in osdhud.c
+ */
 struct movavg {
     int                 window_size;
     int                 off;
@@ -89,6 +93,9 @@ struct movavg {
 # define MAX_WSIZE 10000 /* max size of moving average window */
 # define MAX_ALERTS_SIZE 1024
 
+/*
+ * Application state
+ */
 typedef struct osdhud_state {
     int                 kill_server:1;
     int                 down_hud:1;
@@ -237,6 +244,19 @@ typedef struct osdhud_state {
     }
 
 /*
+ * Shorthands for common idioms
+ */
+
+#define assert_strlcpy(xx,yy)                                           \
+    assert(strlcpy(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_strlcat(xx,yy)                                           \
+    assert(strlcat(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_snprintf(xx,ff,...)                                      \
+    assert(snprintf(xx,sizeof(xx),ff,##__VA_ARGS__) < sizeof(xx))
+#define assert_elapsed(xx,ss)                                           \
+    assert(elapsed(xx,sizeof(xx),ss) < sizeof(xx))
+
+/*
  * TXT_xxx constants, should probably just internationalize properly
  */
 
@@ -273,6 +293,8 @@ void probe_mem(
 void probe_swap(
     osdhud_state_t     *state);
 void probe_net(
+    osdhud_state_t     *state);
+void probe_disk(
     osdhud_state_t     *state);
 void probe_battery(
     osdhud_state_t     *state);

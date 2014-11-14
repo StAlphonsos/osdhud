@@ -41,6 +41,10 @@ int restart_req = 0;                    /* got a SIGHUP */
 int bang_bang = 0;                      /* got a SIGINFO */
 #endif
 
+#define WHITESPACE " \t\n\r"
+#define ipercent(v) ((int)(100 * (v)))
+/*#define ENABLE_ALERTS 1*/
+
 /*
  * Maintain moving averages.
  *
@@ -200,12 +204,13 @@ static unsigned long time_in_milliseconds(
 /**
  * Turn a number of seconds elapsed into a human-readable string.
  * e.g. "10 days 1 hour 23 mins 2 secs".  We have an snprintf-style
- * API: buf,bufsiz specify a buffer and its size.  If our return value
- * is less than bufsiz then buf was big enough and contains a
- * NUL-terminatd string whose length is our return value.  If our
- * return value is greater than bufsiz then buf was too small.  Sadly
- * our return value is not useful for determining how large to make
- * buf, but in practice anything over 35 bytes should be large enough.
+ * API: buf,bufsiz specify a buffer and its size.  If the resulting
+ * string's length is less than bufsiz then buf was big enough and
+ * contains a NUL-terminatd string whose length is our return value.
+ * If our return value is greater than bufsiz then buf was too small.
+ * Sadly our return value is not useful for determining how large to
+ * make buf, but in practice anything over 35 bytes should be large
+ * enough.
  */
 int elapsed(
     char               *buf,
@@ -276,6 +281,7 @@ static void probe(
     probe_mem(state);
     probe_swap(state);
     probe_net(state);
+    probe_disk(state);
     probe_battery(state);
     probe_uptime(state);
 }
@@ -283,8 +289,6 @@ static void probe(
 /*
  * Display Routines
  */
-
-#define ipercent(v) ((int)(100 * (v)))
 
 static void display_load(
     osdhud_state_t     *state)
@@ -351,9 +355,10 @@ static void display_net(
         unit_div = KILO;
     }
     /* Put together the label */
-    assert(
-        snprintf(label,sizeof(label),"net (%s):",iface) < sizeof(label)
-    );
+    if (!max_kbps)
+        assert_snprintf(label,"net (%s):",iface);
+    else
+        assert_snprintf(label,"net (%s %dmb/s):",iface,state->net_speed_mbits);
     /* Put together the details string, as short as possible */
     if ((unsigned long)net_kbps) {
         left = sizeof(details);
@@ -365,25 +370,26 @@ static void display_net(
             off += n;
         }
         n = snprintf(
-            &details[off],left,"%lu %cB/s (%lu px/s: %lu + %lu)",
+            &details[off],left,"%lu %cB/s (%lu px/s)",
             (unsigned long)(net_kbps/unit_div),unit,
-            (unsigned long)net_pxps,
-            (unsigned long)state->net_ipxps,
-            (unsigned long)state->net_opxps
+            (unsigned long)net_pxps
         );
         assert(n < left);
         left -= n;
         off += n;
     } else {
-        assert(
-            strlcpy(details,TXT__QUIET_,sizeof(details)) < sizeof(details)
-        );
+        assert_strlcpy(details,TXT__QUIET_);
     }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,"%s %s",label,details
     );
     if (max_kbps)
         xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+}
+
+static void display_disk(
+    osdhud_state_t     *state)
+{
 }
 
 static void display_battery(
@@ -396,9 +402,9 @@ static void display_battery(
     if (state->battery_missing)
         return;
     if (state->battery_time < 0) {
-        assert(strlcpy(mins,TXT_TIME_UNKNOWN,sizeof(mins)) < sizeof(mins));
+        assert_strlcpy(mins,TXT_TIME_UNKNOWN);
     } else {
-        assert(elapsed(mins,sizeof(mins),state->battery_time*60)<sizeof(mins));
+        assert_elapsed(mins,state->battery_time*60);
     }
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,
@@ -416,7 +422,7 @@ static void display_uptime(
         unsigned long secs = state->sys_uptime;
         char upbuf[64] = { 0 };
 
-        assert(elapsed(upbuf,sizeof(upbuf),secs) < sizeof(upbuf));
+        assert_elapsed(upbuf,secs);
         xosd_display(state->osd,state->disp_line++,XOSD_printf,"up %s",upbuf);
     }
 }
@@ -473,19 +479,12 @@ static void display_hudmeta(
         char *txt = (state->message[0] && state->alerts_mode) ?
             TXT__ALERT_ : TXT__STUCK_;
 
-        assert(
-            strlcpy(left_s,txt,sizeof(left_s)) < sizeof(left_s)
-        );
+        assert_strlcpy(left_s,txt);
     } else if (state->countdown) {
         if (left_secs)
-            assert(
-                snprintf(left_s,sizeof(left_s),"hud down in %d",left_secs) <
-                    sizeof(left_s)
-            );
+            assert_snprintf(left_s,"hud down in %d",left_secs);
         else
-            assert(
-                strlcpy(left_s,TXT__BLINK_,sizeof(left_s)) < sizeof(left_s)
-            );
+            assert_strlcpy(left_s,TXT__BLINK_);
     }
 #ifndef USE_TWO_OSDS
     line = ++state->disp_line;
@@ -511,6 +510,7 @@ static void display(
     display_mem(state);
     display_swap(state);
     display_net(state);
+    display_disk(state);
     display_battery(state);
     display_message(state);
     display_hudmeta(state);
@@ -518,18 +518,17 @@ static void display(
 
 #define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgaAt?"
 
-#define USAGE_MSG "usage: %s [-vgtkFDUSNCwaAh?] [-d msec] [-p msec] [-P msec]\n\
+#define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
        -v verbose      | -k kill server | -F run in foreground\n\
        -D down hud     | -U up hud      | -S stick hud | -N unstick hud\n\
        -g debug mode   | -t toggle mode | -w don't show swap\n\
-       -a alerts mode                 | -A cancel alerts mode\n\
        -n don't display at startup    | -C display hud countdown\n\
                         -h,-? display this\n\
        -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
        -d msec  leave hud visible for millis (def: 2000)\n\
        -p msec  millis between sampling when hud is up (def: 100)\n\
-       -P msec  millis between sampling when hud is down (def: 1000)\n\
+       -P msec  millis between sampling when hud is down (def: 100)\n\
        -f font  font (def: "DEFAULT_FONT")\n\
        -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
        -i iface network interface to watch\n"
@@ -832,8 +831,8 @@ static void free_state(
     free(dispose);
 }
 
-/**
- * Convenience function to split str into words; returns number of words
+/*
+ * Split str into words delimited by whitespace; returns number of words
  */
 static int split(
     char               *str,
@@ -851,10 +850,10 @@ static int split(
         return 0;
     copy = strdup(str);
     assert(copy);
-    toke = strsep(&copy," \t");
+    toke = strsep(&copy,WHITESPACE);
     while (toke && (ntoke < ARRAY_SIZE(splitz))) {
         splitz[ntoke++] = toke;
-        toke = strsep(&copy," \t");
+        toke = strsep(&copy,WHITESPACE);
     }
     if (toke)
         syslog(
@@ -878,7 +877,7 @@ static void free_split(
     int                 argc,
     char              **argv)
 {
-    if (argc && argv) {
+    if (argv) {
         int i = 0;
 
         for (i = 0; i < argc; i++)
@@ -1090,6 +1089,7 @@ static int handle_message(
     return retval;
 }
 
+#ifdef ENABLE_ALERTS
 static int check_alerts(
     osdhud_state_t     *state)
 {
@@ -1101,14 +1101,8 @@ static int check_alerts(
 #define catmsg(xx)                                                      \
     do {                                                                \
         if (state->message[0])                                          \
-            assert(                                                     \
-                strlcat(state->message,", ",sizeof(state->message))     \
-                < sizeof(state->message)                                \
-            );                                                          \
-        assert(                                                         \
-            strlcat(state->message,xx,sizeof(state->message))           \
-            < sizeof(state->message)                                    \
-        );                                                              \
+            assert_strlcat(state->message,", ");                        \
+        assert_strlcat(state->message,xx);                              \
         nalerts++;                                                      \
     } while (0);
 
@@ -1123,6 +1117,7 @@ static int check_alerts(
 
     return nalerts;
 }
+#endif /* ENABLE_ALERTS */
 
 /**
  * Pause for the appropriate amount of time given our state
@@ -1219,7 +1214,11 @@ static int check(
         }
         bang_bang = 0;
 #endif
+#ifdef ENABLE_ALERTS
         have_alerts = check_alerts(state);
+#else
+        have_alerts = 0;
+#endif /* ENABLE_ALERTS */
         if (have_alerts && state->alerts_mode && !state->hud_is_up) {
             quit_loop = done = 1;
             state->stuck = 1;           /* alerts force them to unstick...? */
@@ -1643,11 +1642,7 @@ int main(
         state.sock_path = path;
     }
     state.addr.sun_family = AF_UNIX;
-    assert(
-        strlcpy(
-            state.addr.sun_path,state.sock_path,sizeof(state.addr.sun_path)
-        ) < sizeof(state.addr.sun_path)
-    );
+    assert_strlcpy(state.addr.sun_path,state.sock_path);
 
     /* Everything out here spews to stdout/stderr via (f)printf */
     if (kicked(&state)) {

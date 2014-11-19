@@ -47,21 +47,15 @@ int bang_bang = 0;                      /* got a SIGINFO */
 
 /*
  * Maintain moving averages.
- *
- * XXX The assumption of a constant time-base is subtly wrong, might
- * have to adjust for that ...
  */
 
 struct movavg *movavg_new(
     int                 wsize)
 {
-    struct movavg *ma = (struct movavg *)malloc(sizeof(struct movavg));
+    struct movavg *ma;
 
-    if ((wsize <= 2) || (wsize > MAX_WSIZE)) {
-        /* Only ever called as a daemon, so use syslog */
-        syslog(LOG_ERR,"movavg_new(%d): out of range 2..%d\n",wsize,MAX_WSIZE);
-        exit(1);
-    }
+    assert((wsize > 1) || (wsize <= MAX_WSIZE));
+    ma = malloc(sizeof(*ma));
     assert(ma);
     ma->window_size = wsize;
     ma->off = ma->count = 0;
@@ -108,6 +102,7 @@ float movavg_add(
         }
         ma->sum += val;
         ma->window[ma->off++] = val;
+        assert(ma->count);
         result = ma->sum / ma->count;
     }
     return result;
@@ -173,7 +168,6 @@ static void clear_net_statistics(
         state->net_okbps = state->net_opxps = 0;
     state->net_tot_ibytes = state->net_tot_obytes =
         state->net_tot_ipax = state->net_tot_opax = 0;
-    state->net_speed_mbits = 0;
     state->net_peak_kbps = state->net_peak_pxps = 0;
     movavg_clear(state->ikbps_ma);
     movavg_clear(state->okbps_ma);
@@ -435,6 +429,8 @@ static void display_message(
             state->osd,state->disp_line++,XOSD_printf,"%s",state->message
         );
         state->message_seen = 1;
+    } else {
+        xosd_display(state->osd,state->disp_line++,XOSD_printf,"");
     }
 }
 
@@ -516,8 +512,7 @@ static void display(
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCwhgaAt?"
-
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:knDUSNFCwhgaAt?"
 #define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
        -v verbose      | -k kill server | -F run in foreground\n\
@@ -531,7 +526,8 @@ static void display(
        -P msec  millis between sampling when hud is down (def: 100)\n\
        -f font  font (def: "DEFAULT_FONT")\n\
        -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
-       -i iface network interface to watch\n"
+       -i iface network interface to watch\n\
+       -X mb/s  fix max net link speed in mbit/sec (def: query interface)\n"
 
 static int usage(
     osdhud_state_t     *state,
@@ -607,6 +603,11 @@ static int parse(
         case 'i':
             state->net_iface = strdup(optarg); /* network iface of interest */
             DBG2("parsed -%c %s",ch,state->net_iface);
+            break;
+        case 'X':
+            if (sscanf(optarg,"%d",&state->net_speed_mbits) != 1)
+                fail = usage(state,"bad value for -X");
+            DBG2("parsed -%c %d",ch,state->net_speed_mbits);
             break;
         case 'k':
             state->kill_server = 1;
@@ -776,6 +777,7 @@ static osdhud_state_t *create_state(
         cpy_field(addr);
         dup_field(font);
         dup_field(net_iface);
+        set_field(net_speed_mbits);
         dup_field(time_fmt);
         set_field(pos_x);
         set_field(pos_y);
@@ -1069,6 +1071,8 @@ static int handle_message(
                         state->alerts_mode = 0;
                     else if (foo->alerts_mode)
                         state->alerts_mode = 1;
+                    if (foo->net_speed_mbits)
+                        state->net_speed_mbits = foo->net_speed_mbits;
                 }
             }
             if (state->verbose)
@@ -1269,29 +1273,29 @@ static int pack_message(
     left = len;
 
 #define lead (!off ? "": " ")
-#define single_opt(f,o)                                         \
-    if (state->f) {                                             \
-        int x = snprintf(&packed[off],left,"%s-%s",lead,o);     \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
+#define single_opt(f,o)                                                 \
+    if (state->f) {                                                     \
+        int x = snprintf(&packed[off],left,"%s-%s",lead,o);             \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
     }
-#define integer_opt(f,o)                                        \
-    if (1) {                                                    \
+#define integer_opt(f,o)                                                \
+    do  {                                                               \
         int x=snprintf(&packed[off],left,"%s-%s %d",lead,o,state->f);   \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
-    }
-#define string_opt(f,o)                                         \
-    if (state->f) {                                             \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
+    } while (0);
+#define string_opt(f,o)                                                 \
+    if (state->f) {                                                     \
         int x=snprintf(&packed[off],left,"%s-%s %s",lead,o,state->f);   \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
     }
 
     single_opt(verbose,"v");
@@ -1307,6 +1311,9 @@ static int pack_message(
     single_opt(countdown,"C");
     string_opt(font,"f");
     string_opt(net_iface,"i");
+    if (state->net_speed_mbits) {
+        integer_opt(net_speed_mbits,"X");
+    }
     integer_opt(display_msecs,"d");
     integer_opt(short_pause_msecs,"p");
     integer_opt(long_pause_msecs,"P");

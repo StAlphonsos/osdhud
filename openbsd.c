@@ -8,13 +8,12 @@
  *
  * Much of this code is lifted liberally from the OpenBSD systat
  * command whose source code can be found in /usr/src/usr.bin/systat
- * in the OpenBSD source tree as of version 5.5.  XXX not sure if I
- * should cut and paste the licenses from if.c, systat.h, swap.c and
- * w.c here or if pointing at them and waving a BSD flag is enough...
+ * in the OpenBSD source tree as of version 5.5.
  */
 
 /* LICENSE:
  *
+ * Copyright (c) 2004 Markus Friedl <markus@openbsd.org>
  * Copyright (C) 2014 by attila <attila@stalphonsos.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -30,6 +29,19 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
+ *
+ * Portions of this code were also taken from
+ * /usr/src/usr.bin/systat/systat.h, which has a BSD 3-clause
+ * license on it as of OpenBSD 5.5:
+ *
+ * Copyright (c) 1980, 1989, 1992, 1993
+ *	The Regents of the University of California.  All rights reserved.
+ *
+ * Portions of this code were also taken from
+ * /usr/src/usr.bin/top/machine.c is also BSD 3-clause:
+ *
+ * Copyright (c) 1994 Thorsten Lockert <tholo@sigmasoft.com>
+ * All rights reserved.
  */
 
 #include "osdhud.h"
@@ -79,7 +91,7 @@ struct openbsd_data {
     struct timeval      boottime;
     struct swapent     *swap_devices;
     int                 ncpus;
-    Pvoid_t             groups;
+    Pvoid_t             groups;         /* judy str->ptr hash */
 };
 
 static int pageshift;
@@ -148,6 +160,8 @@ static struct { int bits; int mbit_sec; } media_speeds[] = {
 
     { 0,                          10 }, /* default for the 1st world :-) */
 };
+
+/* also from systat/if.c */
 
 void
 rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)
@@ -221,15 +235,16 @@ void probe_cleanup(
         free(obsd->ifstats);
         obsd->ifstats = NULL;
         obsd->nifs = 0;
+        /* for each group name */
         JSLF(jvp,obsd->groups,group);
         while (jvp) {
+            /* get the set of interfaces */
             Pvoid_t ifaces = *(Pvoid_t *)jvp;
 
-            JSLFA(rc,ifaces);
-            *jvp = 0;
-            JSLN(jvp,obsd->groups,group);
+            JSLFA(rc,ifaces);           /* free the set */
+            JSLN(jvp,obsd->groups,group); /* next group */
         }
-        JSLFA(rc,obsd->groups);
+        JSLFA(rc,obsd->groups);         /* now free the groups hash */
         obsd->groups = NULL;
         free(obsd);
     }
@@ -350,79 +365,79 @@ void probe_net(
         ifs = &ifstats[ifm.ifm_index];
         if (ifs->ifs_name[0] == '\0') { /* index not seen yet */
             bzero(&info,sizeof(info));
+            /* this gets a bunch of metadata, only one bit of which we want */
             rt_getaddrinfo(
                 (struct sockaddr *)((struct if_msghdr *)next + 1),
                 ifm.ifm_addrs, info);
             sdl = (struct sockaddr_dl *)info[RTAX_IFP];
             if (sdl && sdl->sdl_family == AF_LINK && sdl->sdl_nlen > 0) {
+                /* This is an actual interface with a name */
                 int s;
                 struct ifmediareq media;
                 struct ifgroupreq groups;
 
-                /* Create a socket to issue ioctls on */
+                /* Use ioctls to query interface media and group(s) */
                 bcopy(sdl->sdl_data,ifs->ifs_name,sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
-                /* Suss interface speed and group if possible */
                 bzero(&media,sizeof(media));
                 assert_strlcpy(media.ifm_name,ifs->ifs_name);
                 bzero(&groups,sizeof(groups));
                 assert_strlcpy(groups.ifgr_name,ifs->ifs_name);
                 s = socket(AF_INET, SOCK_DGRAM, 0);
-                if (s != -1) {
-                    if (ioctl(s,SIOCGIFMEDIA,&media) == 0) {
-                        int act = media.ifm_active & 0xff; /* low 8 bits */
-                        int mbit_sec = 0;
+                assert(s >= 0);
+                if (ioctl(s,SIOCGIFMEDIA,&media) == 0) {
+                    int act = media.ifm_active & 0xff; /* low 8 bits */
+                    int mbit_sec = 0;
 
-                        for (i = 0; i < ARRAY_SIZE(media_speeds); i++)
-                            if (media_speeds[i].bits == act) {
-                                mbit_sec = media_speeds[i].mbit_sec;
-                                break;
-                            }
-                        if (i == ARRAY_SIZE(media_speeds))
-                            /* Last entry is default */
-                            mbit_sec = media_speeds[i-1].mbit_sec;
-                        ifs->ifs_speed = mbit_sec;
-                        VSPEW("iface %s media cur 0x%x mask 0x%x status 0x%x active 0x%x count=%d: %d mbit/sec",ifs->ifs_name,media.ifm_current,media.ifm_mask,media.ifm_status,media.ifm_active,media.ifm_count,mbit_sec);
-                    }
-                    if (state->net_iface && !ioctl(s,SIOCGIFGROUP,&groups)) {
-                        int ngroups = groups.ifgr_len;
-
-                        groups.ifgr_groups =
-                            (struct ifg_req *)calloc(
-                                ngroups,sizeof(struct ifg_req)
-                            );
-                        assert(groups.ifgr_groups);
-                        if (ioctl(s,SIOCGIFGROUP,&groups)) {
-                            perror("ioctl(SIOCGIFGROUP");
-                        } else {
-                            /* We build a hash of hashes (effectively):
-                             *    { group_name -> { iface_name -> 1, ... } }
-                             */
-                            for (i = 0; i < groups.ifgr_len; i++) {
-                                char *group = groups.ifgr_groups[i].ifgrq_group;
-                                Pvoid_t ifaces = NULL;
-                                Word_t *jvp = NULL, *jvp2 = NULL;
-
-                                VSPEW("%s group#%d/%d %s",ifs->ifs_name,i,groups.ifgr_len,group);
-                                JSLG(jvp,os_data->groups,group);
-                                ifaces = jvp ? *(Pvoid_t *)jvp : NULL;
-                                JSLG(jvp2,ifaces,ifs->ifs_name);
-                                if (!jvp2) {
-                                    JSLI(jvp2,ifaces,ifs->ifs_name);
-                                    assert(jvp2);
-                                    *jvp2 = 1;
-                                }
-                                if (!jvp)
-                                    JSLI(jvp,os_data->groups,group);
-                                assert(jvp);
-                                *jvp = (Word_t)ifaces;
-                            }
+                    for (i = 0; i < ARRAY_SIZE(media_speeds); i++)
+                        if (media_speeds[i].bits == act) {
+                            mbit_sec = media_speeds[i].mbit_sec;
+                            break;
                         }
-                        free(groups.ifgr_groups);
-                        groups.ifgr_groups = NULL;
-                    }
-                    close(s);
+                    if (i == ARRAY_SIZE(media_speeds))
+                        /* Last entry is default */
+                        mbit_sec = media_speeds[i-1].mbit_sec;
+                    ifs->ifs_speed = mbit_sec;
+                    VSPEW("iface %s media cur 0x%x mask 0x%x status 0x%x active 0x%x count=%d: %d mbit/sec",ifs->ifs_name,media.ifm_current,media.ifm_mask,media.ifm_status,media.ifm_active,media.ifm_count,mbit_sec);
                 }
+                if (state->net_iface && !ioctl(s,SIOCGIFGROUP,&groups)) {
+                    int ngroups = groups.ifgr_len;
+
+                    groups.ifgr_groups =
+                        (struct ifg_req *)calloc(
+                            ngroups,sizeof(struct ifg_req)
+                        );
+                    assert(groups.ifgr_groups);
+                    if (ioctl(s,SIOCGIFGROUP,&groups)) {
+                        perror("ioctl(SIOCGIFGROUP");
+                    } else {
+                        /* We build a hash of hashes (effectively):
+                         *    { group_name -> { iface_name -> 1, ... } }
+                         */
+                        for (i = 0; i < groups.ifgr_len; i++) {
+                            char *group = groups.ifgr_groups[i].ifgrq_group;
+                            Pvoid_t ifaces = NULL;
+                            Word_t *jvp = NULL, *jvp2 = NULL;
+
+                            VSPEW("%s group#%d/%d %s",ifs->ifs_name,i,groups.ifgr_len,group);
+                            JSLG(jvp,os_data->groups,group);
+                            ifaces = jvp ? *(Pvoid_t *)jvp : NULL;
+                            JSLG(jvp2,ifaces,ifs->ifs_name);
+                            if (!jvp2) {
+                                JSLI(jvp2,ifaces,ifs->ifs_name);
+                                assert(jvp2);
+                                *jvp2 = 1;
+                            }
+                            if (!jvp)
+                                JSLI(jvp,os_data->groups,group);
+                            assert(jvp);
+                            *jvp = (Word_t)ifaces;
+                        }
+                    }
+                    free(groups.ifgr_groups);
+                    groups.ifgr_groups = NULL;
+                }
+                close(s);
             }
             if (ifs->ifs_name[0] == '\0') /* was not interesting */
                 continue;
@@ -465,7 +480,8 @@ void probe_net(
             unsigned long delta_in_p = ifi_x(ipackets) - state->net_tot_ipax;
             unsigned long delta_out_p = ifi_x(opackets) - state->net_tot_opax;
 
-            state->net_speed_mbits = ifs->ifs_speed;
+            if (!state->net_speed_mbits)
+                state->net_speed_mbits = ifs->ifs_speed;
             tot_delta_in_b += delta_in_b;
             tot_delta_out_b += delta_out_b;
             tot_delta_in_p += delta_in_p;
@@ -496,6 +512,7 @@ void probe_net(
 void probe_disk(
     osdhud_state_t     *state)
 {
+    /* XXX grab diskstat structs and do something meaningful with them */
 }
 
 /* c.f. apm(4) */

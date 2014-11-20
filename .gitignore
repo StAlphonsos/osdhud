@@ -1,3 +1,4 @@
 osdhud
 *.o
 *~
+version.h

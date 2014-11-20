@@ -7,7 +7,7 @@
 
 /* LICENSE:
  *
- * Copyright (C) 1999-2014 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014 by attila <attila@stalphonsos.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -51,8 +51,8 @@
 #endif
 
 #ifdef __OpenBSD__
-
 # define HAVE_SETPROCTITLE 1
+# include <tzfile.h>
 #endif
 
 #include <sys/socket.h>
@@ -60,11 +60,12 @@
 #include <sys/un.h>
 
 #include <xosd.h>
+#include <Judy.h>
 
-#define VERSION "0.1.0"
+#include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
-#if __amd64__                           /* XXX check size */
+#if __amd64__                           /* XXX WRONG! */
 # define SIZEOF_F "%ld"
 #else
 # define SIZEOF_F "%d"
@@ -78,6 +79,9 @@
 /*#define CREATE_EACH_TIME 1*/
 #define USE_TWO_OSDS 1/**/
 
+/*
+ * A moving average c.f. movavg_* in osdhud.c
+ */
 struct movavg {
     int                 window_size;
     int                 off;
@@ -86,6 +90,12 @@ struct movavg {
     float              *window;
 };
 
+# define MAX_WSIZE 10000 /* max size of moving average window */
+# define MAX_ALERTS_SIZE 1024
+
+/*
+ * Application state
+ */
 typedef struct osdhud_state {
     int                 kill_server:1;
     int                 down_hud:1;
@@ -99,6 +109,9 @@ typedef struct osdhud_state {
     int                 debug:1;
     int                 countdown:1;
     int                 quiet_at_start:1;
+    int                 toggle_mode:1;
+    int                 alerts_mode:1;
+    int                 cancel_alerts:1;
     char               *argv0;
     int                 pid;
     char               *sock_path;
@@ -106,7 +119,12 @@ typedef struct osdhud_state {
     int                 sock_fd;
     char               *font;
     char               *net_iface;
+    int                 net_speed_mbits;
     char               *time_fmt;
+    int                 nswap;
+    int                 min_battery_life;
+    float               max_load_avg;
+    float               max_mem_used;
     unsigned long       net_tot_ipax;
     unsigned long       net_tot_ierr;
     unsigned long       net_tot_opax;
@@ -126,19 +144,29 @@ typedef struct osdhud_state {
     int                 net_movavg_wsize;
     int                 verbose;
     float               load_avg;
-    struct movavg      *net_kbps;
-    struct movavg      *net_pxps;
+    void               *per_os_data;
+    struct movavg      *ikbps_ma;
+    float               net_ikbps;
+    struct movavg      *okbps_ma;
+    float               net_okbps;
+    struct movavg      *ipxps_ma;
+    float               net_ipxps;
+    struct movavg      *opxps_ma;
+    float               net_opxps;
+    float               net_peak_kbps;
+    float               net_peak_pxps;
     float               mem_used_percent;
     float               swap_used_percent;
+    int                 battery_missing:1;
     int                 battery_life;
-    int                 battery_life_avail:1;
-    int                 battery_state;
-    int                 battery_state_avail:1;
+    char                battery_state[32];
     int                 battery_time;
-    int                 battery_time_avail:1;
     unsigned long       uptime_secs;
     unsigned long       last_t;
     unsigned long       first_t;
+    unsigned long       sys_uptime;
+    int                 message_seen:1;
+    char                message[MAX_ALERTS_SIZE];
     xosd               *osd;
     int                 disp_line;
 #ifdef USE_TWO_OSDS
@@ -147,8 +175,8 @@ typedef struct osdhud_state {
     char                errbuf[1024];
 } osdhud_state_t;
 
-#define KILO 1000
-
+#define KILO 1024
+#define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
 
 #define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
@@ -157,10 +185,15 @@ typedef struct osdhud_state {
 #define DEFAULT_NLINES 15
 #define DEFAULT_WIDTH 50
 #define DEFAULT_DISPLAY 4000
-#define DEFAULT_SHORT_PAUSE 300
-#define DEFAULT_LONG_PAUSE 1800
+#define DEFAULT_SHORT_PAUSE 100
+/*#define DEFAULT_LONG_PAUSE 1800*/
+#define DEFAULT_LONG_PAUSE DEFAULT_SHORT_PAUSE
 #define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
-#define DEFAULT_NET_MOVAVG_WSIZE 300   /* granularity = SHORT_PAUSE */
+#define DEFAULT_NET_MOVAVG_WSIZE 6
+#define DEFAULT_NSWAP 1
+#define DEFAULT_MIN_BATTERY_LIFE 10
+#define DEFAULT_MAX_LOAD_AVG 0.0
+#define DEFAULT_MAX_MEM_USED 0.9
 
 #define DBG1(fmt,arg1)                                                  \
     if (state->debug) {                                                 \
@@ -181,9 +214,25 @@ typedef struct osdhud_state {
 #define SPEW(fmt,mem)                                                   \
     if (state->verbose) {                                               \
         if (state->foreground)                                          \
-            printf(fmt,state->mem);                                     \
+            printf(fmt"\n",state->mem);                                 \
         else                                                            \
             syslog(LOG_WARNING,fmt,state->mem);                         \
+    }
+
+#define VSPEW(fmt,...)                                                  \
+    if (state->verbose) {                                               \
+        if (state->foreground)                                          \
+            printf(fmt "\n",##__VA_ARGS__);                             \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,##__VA_ARGS__);                      \
+    }
+
+#define DSPEW(fmt,...)                                                  \
+    if (state->debug) {                                                 \
+        if (state->foreground)                                          \
+            printf(fmt "\n",##__VA_ARGS__);                             \
+        else                                                            \
+            syslog(LOG_WARNING,fmt,##__VA_ARGS__);                      \
     }
 
 #define SPEWE(msg)                                                      \
@@ -194,18 +243,49 @@ typedef struct osdhud_state {
             syslog(LOG_ERR,"%s",msg);                                   \
     }
 
+/*
+ * Shorthands for common idioms
+ */
+
+#define assert_strlcpy(xx,yy)                                           \
+    assert(strlcpy(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_strlcat(xx,yy)                                           \
+    assert(strlcat(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_snprintf(xx,ff,...)                                      \
+    assert(snprintf(xx,sizeof(xx),ff,##__VA_ARGS__) < sizeof(xx))
+#define assert_elapsed(xx,ss)                                           \
+    assert(elapsed(xx,sizeof(xx),ss) < sizeof(xx))
+
+/*
+ * TXT_xxx constants, should probably just internationalize properly
+ */
+
+#define TXT__QUIET_             "-quiet-"
+#define TXT_TIME_UNKNOWN        "time unknown"
+#define TXT__UNKNOWN_           "-unknown-"
+#define TXT__STUCK_             "-stuck-"
+#define TXT__ALERT_             "-alert-"
+#define TXT__BLINK_             "-blink-"
+#define TXT_ALERT_BATTERY_LOW   "BATTERY LOW"
+#define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
+#define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
+
 /* shared across operating systems */
 void update_net_statistics(
     osdhud_state_t     *state,
-    unsigned long       delta_bytes,
-    unsigned long       delta_pax);
+    unsigned long       delta_ibytes,
+    unsigned long       delta_obytes,
+    unsigned long       delta_ipax,
+    unsigned long       delta_opax);
 
 /*
  * probe_xxx() function prototypes
  */
 
 void probe_init(
-    void);
+    osdhud_state_t     *state);
+void probe_cleanup(
+    osdhud_state_t     *state);
 void probe_load(
     osdhud_state_t     *state);
 void probe_mem(
@@ -213,6 +293,8 @@ void probe_mem(
 void probe_swap(
     osdhud_state_t     *state);
 void probe_net(
+    osdhud_state_t     *state);
+void probe_disk(
     osdhud_state_t     *state);
 void probe_battery(
     osdhud_state_t     *state);

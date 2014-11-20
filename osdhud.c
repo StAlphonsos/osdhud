@@ -37,25 +37,25 @@
 
 int interrupted = 0;                    /* got a SIGINT */
 int restart_req = 0;                    /* got a SIGHUP */
+#ifdef SIGINFO
 int bang_bang = 0;                      /* got a SIGINFO */
+#endif
+
+#define WHITESPACE " \t\n\r"
+#define ipercent(v) ((int)(100 * (v)))
+/*#define ENABLE_ALERTS 1*/
 
 /*
  * Maintain moving averages.
- *
- * XXX The assumption of a constant time-base is subtly wrong, might
- * have to adjust for that ...
  */
 
 struct movavg *movavg_new(
     int                 wsize)
 {
-    struct movavg *ma = (struct movavg *)malloc(sizeof(struct movavg));
+    struct movavg *ma;
 
-    if ((wsize <= 2) || (wsize > MAX_WSIZE)) {
-        /* Only ever called as a daemon, so use syslog */
-        syslog(LOG_ERR,"movavg_new(%d): out of range 2..%d\n",wsize,MAX_WSIZE);
-        exit(1);
-    }
+    assert((wsize > 1) || (wsize <= MAX_WSIZE));
+    ma = malloc(sizeof(*ma));
     assert(ma);
     ma->window_size = wsize;
     ma->off = ma->count = 0;
@@ -91,7 +91,7 @@ float movavg_add(
     struct movavg      *ma,
     float               val)
 {
-    float val = 0;
+    float result = 0;
 
     if (ma) {
         if (ma->count < ma->window_size)
@@ -102,9 +102,16 @@ float movavg_add(
         }
         ma->sum += val;
         ma->window[ma->off++] = val;
-        val = ma->sum / ma->count;
+        assert(ma->count);
+        result = ma->sum / ma->count;
     }
-    return val;
+    return result;
+}
+
+float movavg_val(
+    struct movavg      *ma)
+{
+    return (ma && ma->count) ? (ma->sum / ma->count) : 0;
 }
 
 /*
@@ -133,23 +140,39 @@ static void die(
 
 void update_net_statistics(
     osdhud_state_t     *state,
-    unsigned long       delta_bytes,
-    unsigned long       delta_pax)
+    unsigned long       delta_ibytes,
+    unsigned long       delta_obytes,
+    unsigned long       delta_ipax,
+    unsigned long       delta_opax)
 {
     if (state->delta_t) {
-        float dt = (float)state->delta_t;
+        float dt = (float)state->delta_t / 1000.0;
 
-        state->net_kbps = (movavg_add(state->kbps_ma,delta_bytes) / dt) * KILO;
-        state->net_pxps = movavg_add(state->pxps_ma,delta_pax) / dt;
+        state->net_ikbps = (movavg_add(state->ikbps_ma,delta_ibytes) / dt)/KILO;
+        state->net_okbps = (movavg_add(state->okbps_ma,delta_obytes) / dt)/KILO;
+        state->net_ipxps = movavg_add(state->ipxps_ma,delta_ipax) / dt;
+        state->net_opxps = movavg_add(state->opxps_ma,delta_opax) / dt;
+
+        DSPEW("net %s bytes in  += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_ibytes,movavg_val(state->ikbps_ma),dt,state->net_ikbps);
+        DSPEW("net %s bytes out += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_obytes,movavg_val(state->okbps_ma),dt,state->net_okbps);
+        DSPEW("net %s pax   in  += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_ipax,movavg_val(state->ipxps_ma),dt,state->net_ipxps);
+        DSPEW("net %s pax   out += %lu -> %.2f / %f secs => %.2f",state->net_iface,delta_opax,movavg_val(state->opxps_ma),dt,state->net_opxps);
+
     }
 }
 
 static void clear_net_statistics(
     osdhud_state_t     *state)
 {
-    state->net_kbps = state->net_pxps = 0;
-    movavg_clear(state->kbps_ma);
-    movavg_clear(state->pxps_ma);
+    state->net_ikbps = state->net_ipxps =
+        state->net_okbps = state->net_opxps = 0;
+    state->net_tot_ibytes = state->net_tot_obytes =
+        state->net_tot_ipax = state->net_tot_opax = 0;
+    state->net_peak_kbps = state->net_peak_pxps = 0;
+    movavg_clear(state->ikbps_ma);
+    movavg_clear(state->okbps_ma);
+    movavg_clear(state->ipxps_ma);
+    movavg_clear(state->opxps_ma);
 }
 
 static unsigned long time_in_microseconds(
@@ -173,6 +196,69 @@ static unsigned long time_in_milliseconds(
 }
 
 /**
+ * Turn a number of seconds elapsed into a human-readable string.
+ * e.g. "10 days 1 hour 23 mins 2 secs".  We have an snprintf-style
+ * API: buf,bufsiz specify a buffer and its size.  If the resulting
+ * string's length is less than bufsiz then buf was big enough and
+ * contains a NUL-terminatd string whose length is our return value.
+ * If our return value is greater than bufsiz then buf was too small.
+ * Sadly our return value is not useful for determining how large to
+ * make buf, but in practice anything over 35 bytes should be large
+ * enough.
+ */
+int elapsed(
+    char               *buf,
+    int                 bufsiz,
+    unsigned long       secs)
+{
+    unsigned long days;
+    unsigned long hours;
+    unsigned long mins;
+    size_t nleft = bufsiz;
+    size_t off = 0;
+
+    days = secs / SECSPERDAY;
+    secs %= SECSPERDAY;
+    hours = secs / SECSPERHOUR;
+    secs %= SECSPERHOUR;
+    mins = secs / SECSPERMIN;
+    secs %= SECSPERMIN;
+
+#define catsup(var)                                                     \
+        if (var) {                                                      \
+            size_t _catsup_n;                                           \
+            char _catsup_u[10] = #var;                                  \
+            if (off) {                                                  \
+                if (nleft <= 2) {                                       \
+                    off = bufsiz+1;                                     \
+                    goto DONE;                                          \
+                }                                                       \
+                (void) strlcat(&buf[off]," ",nleft);                    \
+                nleft -= 1;                                             \
+                off += 1;                                               \
+            }                                                           \
+            if (var == 1) _catsup_u[strlen(#var)-1] = 0;                \
+            _catsup_n = snprintf(                                       \
+                &buf[off],nleft,"%lu %s",var,_catsup_u);                \
+            if (_catsup_n >= nleft) {                                   \
+                off = bufsiz+1;                                         \
+                goto DONE;                                              \
+            }                                                           \
+            off += _catsup_n;                                           \
+            nleft -= _catsup_n;                                         \
+        }
+
+    catsup(days);
+    catsup(hours);
+    catsup(mins);
+    catsup(secs);
+#undef catsup
+
+ DONE:
+    return off;
+}
+
+/**
  * Probe data and gather statistics
  *
  * This function invokes probe_xxx() routines defined in the per-OS
@@ -181,7 +267,7 @@ static unsigned long time_in_milliseconds(
 static void probe(
     osdhud_state_t     *state)
 {
-    unsigned long now = time_in_microseconds();
+    unsigned long now = time_in_milliseconds();
 
     state->delta_t = now - state->last_t;
     state->last_t = now;
@@ -189,6 +275,7 @@ static void probe(
     probe_mem(state);
     probe_swap(state);
     probe_net(state);
+    probe_disk(state);
     probe_battery(state);
     probe_uptime(state);
 }
@@ -200,11 +287,14 @@ static void probe(
 static void display_load(
     osdhud_state_t     *state)
 {
-    SPEW("load avg: %.2f\n",load_avg);
     xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"load: %.2f",state->load_avg
+        state->osd,state->disp_line++,XOSD_printf,"load: %.2f",state->load_avg
     );
+    if (state->max_load_avg) {
+        int percent = ipercent(state->load_avg/state->max_load_avg);
+
+        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+    }
 }
 
 static void display_mem(
@@ -212,15 +302,8 @@ static void display_mem(
 {
     int percent = (int)(100 * state->mem_used_percent);
 
-    SPEW("mem used: %f\n",mem_used_percent);
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"mem: %d%%",percent
-    );
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_percentage,percent
-    );
+    xosd_display(state->osd,state->disp_line++,XOSD_printf,"mem: %d%%",percent);
+    xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
 }
 
 static void display_swap(
@@ -228,42 +311,127 @@ static void display_swap(
 {
     int percent = (int)(100 * state->swap_used_percent);
 
-    SPEW("swap used: %f\n",swap_used_percent);
+    if (!state->nswap)
+        return;
     xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_printf,"swap: %d%%",percent
+        state->osd,state->disp_line++,XOSD_printf,"swap: %d%%",percent
     );
-    xosd_display(
-        state->osd,state->disp_line++,
-        XOSD_percentage,percent
-    );
+    xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
 }
 
 static void display_net(
     osdhud_state_t     *state)
 {
-    char *label = state->net_iface? state->net_iface: "net";
+    char *iface = state->net_iface? state->net_iface: "-";
+    int left, off, n;
+    char label[128] = { 0 };
+    char details[128] = { 0 };
+    float net_kbps = state->net_ikbps + state->net_okbps;
+    float net_pxps = state->net_ipxps + state->net_opxps;
+    char unit = 'k';
+    float unit_div = 1.0;
+    float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
+    int percent = max_kbps ? (int)(100 * (net_kbps / max_kbps)) : 0;
 
-    SPEW("net kbps: %f\n",state->net_kbps);
+    /*
+     * If there are gigabytes or megabytes flying by then
+     * switch to the appropriate unit.
+     */
+    if (net_kbps > state->net_peak_kbps)
+        state->net_peak_kbps = net_kbps;
+    if (net_pxps > state->net_peak_pxps)
+        state->net_peak_pxps = net_pxps;
+    if (net_kbps > MEGA) {
+        unit = 'g';
+        unit_div = MEGA;
+    } else if (net_kbps > KILO) {
+        unit = 'm';
+        unit_div = KILO;
+    }
+    /* Put together the label */
+    if (!max_kbps)
+        assert_snprintf(label,"net (%s):",iface);
+    else
+        assert_snprintf(label,"net (%s %dmb/s):",iface,state->net_speed_mbits);
+    /* Put together the details string, as short as possible */
+    if ((unsigned long)net_kbps) {
+        left = sizeof(details);
+        off = 0;
+        if (max_kbps && percent) {
+            n = snprintf(&details[off],left,"%3d%% ",percent);
+            assert(n < left);
+            left -= n;
+            off += n;
+        }
+        n = snprintf(
+            &details[off],left,"%lu %cB/s (%lu px/s)",
+            (unsigned long)(net_kbps/unit_div),unit,
+            (unsigned long)net_pxps
+        );
+        assert(n < left);
+        left -= n;
+        off += n;
+    } else {
+        assert_strlcpy(details,TXT__QUIET_);
+    }
     xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,"%s: %f kB/sec",
-        label,state->net_kbps
+        state->osd,state->disp_line++,XOSD_printf,"%s %s",label,details
     );
-    SPEW("net pxps: %f\n",state->net_pxps);
-    xosd_display(
-        state->osd,state->disp_line++,XOSD_printf,"%s: %f pax/sec",
-        label,state->net_pxps
-    );
+    if (max_kbps)
+        xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+}
+
+static void display_disk(
+    osdhud_state_t     *state)
+{
 }
 
 static void display_battery(
     osdhud_state_t     *state)
 {
+    char *charging = state->battery_state[0] ?
+        state->battery_state : TXT__UNKNOWN_;
+    char mins[128] = { 0 };
+
+    if (state->battery_missing)
+        return;
+    if (state->battery_time < 0) {
+        assert_strlcpy(mins,TXT_TIME_UNKNOWN);
+    } else {
+        assert_elapsed(mins,state->battery_time*60);
+    }
+    xosd_display(
+        state->osd,state->disp_line++,XOSD_printf,
+        "battery: %s, %d%% charged (%s)",charging,state->battery_life,mins
+    );
+    xosd_display(
+        state->osd,state->disp_line++,XOSD_percentage,state->battery_life
+    );
 }
 
 static void display_uptime(
     osdhud_state_t     *state)
 {
+    if (state->sys_uptime) {
+        unsigned long secs = state->sys_uptime;
+        char upbuf[64] = { 0 };
+
+        assert_elapsed(upbuf,secs);
+        xosd_display(state->osd,state->disp_line++,XOSD_printf,"up %s",upbuf);
+    }
+}
+
+static void display_message(
+    osdhud_state_t     *state)
+{
+    if (!state->message_seen && state->message[0]) {
+        xosd_display(
+            state->osd,state->disp_line++,XOSD_printf,"%s",state->message
+        );
+        state->message_seen = 1;
+    } else {
+        xosd_display(state->osd,state->disp_line++,XOSD_printf,"");
+    }
 }
 
 static void display_hudmeta(
@@ -303,20 +471,16 @@ static void display_hudmeta(
         }
     }
 
-    if (state->stuck)
-        assert(
-            strlcpy(left_s,"-stuck-",sizeof(left_s)) < sizeof(left_s)
-        );
-    else if (state->countdown) {
+    if (state->stuck) {
+        char *txt = (state->message[0] && state->alerts_mode) ?
+            TXT__ALERT_ : TXT__STUCK_;
+
+        assert_strlcpy(left_s,txt);
+    } else if (state->countdown) {
         if (left_secs)
-            assert(
-                snprintf(left_s,sizeof(left_s),"hud down in %d",left_secs) <
-                    sizeof(left_s)
-            );
+            assert_snprintf(left_s,"hud down in %d",left_secs);
         else
-            assert(
-                strlcpy(left_s,"-blink-",sizeof(left_s)) < sizeof(left_s)
-            );
+            assert_strlcpy(left_s,TXT__BLINK_);
     }
 #ifndef USE_TWO_OSDS
     line = ++state->disp_line;
@@ -327,9 +491,7 @@ static void display_hudmeta(
             left_s[0]? " [": "",left_s,left_s[0]? "]":""
         );
     else if (left_s[0])
-        xosd_display(
-            osd,line,XOSD_printf,"[%s]",left_s
-        );
+        xosd_display(osd,line,XOSD_printf,"[%s]",left_s);
 }
 
 /**
@@ -339,30 +501,33 @@ static void display(
     osdhud_state_t     *state)
 {
     state->disp_line = 0;
+    display_uptime(state);
     display_load(state);
     display_mem(state);
     display_swap(state);
     display_net(state);
+    display_disk(state);
     display_battery(state);
-    display_uptime(state);
+    display_message(state);
     display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:knDUSNFCh?"
-
-#define USAGE_MSG "usage: %s [-vkFDUSNh?] [-d msec] [-p msec] [-P msec]\n\
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:knDUSNFCwhgaAt?"
+#define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
-       -v verbose | -k kill server | -F run in foreground\n\
-       -D down hud | -U up hud | -S stick hud | -N unstick hud\n\
-       -n don't display at startup | -C display hud countdown\n\
+       -v verbose      | -k kill server | -F run in foreground\n\
+       -D down hud     | -U up hud      | -S stick hud | -N unstick hud\n\
+       -g debug mode   | -t toggle mode | -w don't show swap\n\
+       -n don't display at startup    | -C display hud countdown\n\
                         -h,-? display this\n\
-       -T fmt   show time using strftime fmt (def: yyyy-mm-dd HH:MM:SS)\n\
+       -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
        -d msec  leave hud visible for millis (def: 2000)\n\
        -p msec  millis between sampling when hud is up (def: 100)\n\
-       -P msec  millis between sampling when hud is down (def: 1000)\n\
-       -f font  font to use for display\n\
+       -P msec  millis between sampling when hud is down (def: 100)\n\
+       -f font  font (def: "DEFAULT_FONT")\n\
        -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
-       -i iface network interface to watch\n"
+       -i iface network interface to watch\n\
+       -X mb/s  fix max net link speed in mbit/sec (def: query interface)\n"
 
 static int usage(
     osdhud_state_t     *state,
@@ -385,7 +550,7 @@ static int usage(
     return fail;
 }
 
-/**
+/*
  * Parse command-line arguments into osdhud_state_t structure
  */
 static int parse(
@@ -439,6 +604,11 @@ static int parse(
             state->net_iface = strdup(optarg); /* network iface of interest */
             DBG2("parsed -%c %s",ch,state->net_iface);
             break;
+        case 'X':
+            if (sscanf(optarg,"%d",&state->net_speed_mbits) != 1)
+                fail = usage(state,"bad value for -X");
+            DBG2("parsed -%c %d",ch,state->net_speed_mbits);
+            break;
         case 'k':
             state->kill_server = 1;
             DBG1("parsed -%c",ch);
@@ -471,8 +641,24 @@ static int parse(
             state->countdown = 1;
             DBG1("parsed -%c",ch);
             break;
+        case 'w':
+            state->nswap = 0;
+            DBG1("parsed -%c",ch);
+            break;
         case 'n':
             state->quiet_at_start = 1;
+            DBG1("parsed -%c",ch);
+            break;
+        case 't':
+            state->toggle_mode = 1;
+            DBG1("parsed -%c",ch);
+            break;
+        case 'a':
+            state->alerts_mode = 1;
+            DBG1("parsed -%c",ch);
+            break;
+        case 'A':
+            state->cancel_alerts = 1;
             DBG1("parsed -%c",ch);
             break;
         case '?':                       /* help */
@@ -502,7 +688,9 @@ static void init_state(
     }
     state->kill_server = state->down_hud = state->up_hud = state->countdown =
         state->stick_hud = state->unstick_hud = state->foreground =
-        state->hud_is_up = state->server_quit = state->stuck = 0;
+        state->hud_is_up = state->server_quit = state->stuck = state->verbose =
+        state->debug = state->toggle_mode = state->alerts_mode = 
+        state->cancel_alerts = 0;
     state->pid = 0;
     state->sock_fd = -1;
     state->sock_path = NULL;
@@ -512,6 +700,7 @@ static void init_state(
     memset((void *)&state->addr,0,sizeof(state->addr));
     state->font = NULL;
     state->net_iface = NULL;
+    state->net_speed_mbits = 0;
     state->net_tot_ipax = state->net_tot_ierr =
         state->net_tot_opax = state->net_tot_oerr =
         state->net_tot_ibytes = state->net_tot_obytes = 0;
@@ -522,21 +711,30 @@ static void init_state(
     state->width = DEFAULT_WIDTH;
     state->display_msecs = DEFAULT_DISPLAY;
     state->t0_msecs = 0;
+    state->nswap = DEFAULT_NSWAP;
+    state->min_battery_life = DEFAULT_MIN_BATTERY_LIFE;
+    state->max_load_avg = DEFAULT_MAX_LOAD_AVG;
+    state->max_mem_used = DEFAULT_MAX_MEM_USED;
     state->short_pause_msecs = DEFAULT_SHORT_PAUSE;
     state->long_pause_msecs = DEFAULT_LONG_PAUSE;
-    state->net_movavg_wsaize = DEFAULT_NET_MOVAVG_WSIZE;
+    state->net_movavg_wsize = DEFAULT_NET_MOVAVG_WSIZE;
     state->load_avg = state->mem_used_percent = state->swap_used_percent = 0;
-    state->net_kbps = state->net_pxps = 0;
-    state->kbps_ma = state->pxps_ma = NULL;
+    state->per_os_data = NULL;
+    state->net_ikbps = state->net_ipxps =
+        state->net_okbps = state->net_opxps = 0;
+    state->net_peak_kbps = state->net_peak_pxps = 0;
+    state->ikbps_ma = state->ipxps_ma =
+        state->okbps_ma = state->opxps_ma = NULL;
+    state->battery_missing = 0;
     state->battery_life = 0;
-    state->battery_life_avail = 0;
-    state->battery_state = 0;
-    state->battery_state_avail = 0;
+    memset(state->battery_state,0,sizeof(state->battery_state));
     state->battery_time = 0;
-    state->battery_time_avail = 0;
     state->last_t = 0;
     state->first_t = 0;
+    state->sys_uptime = 0;
     state->osd = NULL;
+    memset(state->message,0,sizeof(state->message));
+    state->message_seen = 0;
 #ifdef USE_TWO_OSDS
     state->osd2 = NULL;
 #endif
@@ -571,11 +769,15 @@ static osdhud_state_t *create_state(
         set_field(server_quit);
         set_field(stuck);
         set_field(debug);
+        set_field(toggle_mode);
+        set_field(alerts_mode);
+        set_field(cancel_alerts);
         set_field(countdown);
         dup_field(sock_path);
         cpy_field(addr);
         dup_field(font);
         dup_field(net_iface);
+        set_field(net_speed_mbits);
         dup_field(time_fmt);
         set_field(pos_x);
         set_field(pos_y);
@@ -602,6 +804,7 @@ static void cleanup_state(
             xosd_destroy(state->osd2);
 #endif
         }
+        probe_cleanup(state);
         if (state->time_fmt) {
             free(state->time_fmt);
             state->time_fmt = NULL;
@@ -612,10 +815,14 @@ static void cleanup_state(
         state->font = NULL;
         free(state->net_iface);
         state->net_iface = NULL;
-        movavg_free(state->kbps_ma);
-        state->kbps_ma = NULL;
-        movavg_free(state->pxps_ma);
-        state->pxps_ma = NULL;
+        movavg_free(state->ikbps_ma);
+        state->ikbps_ma = NULL;
+        movavg_free(state->okbps_ma);
+        state->okbps_ma = NULL;
+        movavg_free(state->ipxps_ma);
+        state->ipxps_ma = NULL;
+        movavg_free(state->opxps_ma);
+        state->opxps_ma = NULL;
     }
 }
 
@@ -626,8 +833,8 @@ static void free_state(
     free(dispose);
 }
 
-/**
- * Convenience function to split str into words; returns number of words
+/*
+ * Split str into words delimited by whitespace; returns number of words
  */
 static int split(
     char               *str,
@@ -645,10 +852,10 @@ static int split(
         return 0;
     copy = strdup(str);
     assert(copy);
-    toke = strsep(&copy," \t");
+    toke = strsep(&copy,WHITESPACE);
     while (toke && (ntoke < ARRAY_SIZE(splitz))) {
         splitz[ntoke++] = toke;
-        toke = strsep(&copy," \t");
+        toke = strsep(&copy,WHITESPACE);
     }
     if (toke)
         syslog(
@@ -672,7 +879,7 @@ static void free_split(
     int                 argc,
     char              **argv)
 {
-    if (argc && argv) {
+    if (argv) {
         int i = 0;
 
         for (i = 0; i < argc; i++)
@@ -776,7 +983,7 @@ static int handle_message(
                             state->display_msecs,foo->display_msecs
                         );
                     state->display_msecs = foo->display_msecs;
-                    if (!state->hud_is_up)
+                    if (!state->hud_is_up || state->toggle_mode)
                         retval = 1;
                     else {
                         /* hud is up: increase duration of display */
@@ -838,24 +1045,34 @@ static int handle_message(
                         free(state->net_iface);
                         state->net_iface = foo->net_iface ?
                             strdup(foo->net_iface) : NULL;
+                        state->net_speed_mbits = 0;
                     }
 #undef is_different
                     if (state->verbose)
                         syslog(
-                            LOG_WARNING,"up:%d dn:%d stk:%d ustk:%d",
-                            foo->up_hud,foo->down_hud,foo->stick_hud,
-                            foo->unstick_hud
+                            LOG_WARNING,"tog:%d up:%d dn:%d stk:%d ustk:%d",
+                            foo->toggle_mode,foo->up_hud,foo->down_hud,
+                            foo->stick_hud,foo->unstick_hud
                         );
-                    /* ... what to do with these ? */
-                    if (foo->up_hud || foo->stick_hud) {
+                    if (foo->toggle_mode) {
+                        /* -t overrides -S/-N */
+                        foo->stick_hud = foo->unstick_hud = 0;
+                        retval = 1;
+                        state->stuck = !state->stuck;
+                    } else if (foo->up_hud || foo->stick_hud) {
                         retval = !state->hud_is_up;
                         state->stuck = foo->stick_hud ? 1 : 0;
-                    }
-                    if (foo->down_hud)
+                    } else if (foo->down_hud)
                         retval = state->hud_is_up ? 1 : 0;
-                    if (foo->unstick_hud)
+                    else if (foo->unstick_hud)
                         state->stuck = 0;
                     state->countdown = foo->countdown;
+                    if (foo->cancel_alerts)
+                        state->alerts_mode = 0;
+                    else if (foo->alerts_mode)
+                        state->alerts_mode = 1;
+                    if (foo->net_speed_mbits)
+                        state->net_speed_mbits = foo->net_speed_mbits;
                 }
             }
             if (state->verbose)
@@ -876,13 +1093,43 @@ static int handle_message(
     return retval;
 }
 
+#ifdef ENABLE_ALERTS
+static int check_alerts(
+    osdhud_state_t     *state)
+{
+    int nalerts = 0;
+
+    memset(state->message,0,sizeof(state->message));
+    state->message_seen = 0;
+
+#define catmsg(xx)                                                      \
+    do {                                                                \
+        if (state->message[0])                                          \
+            assert_strlcat(state->message,", ");                        \
+        assert_strlcat(state->message,xx);                              \
+        nalerts++;                                                      \
+    } while (0);
+
+    if (!state->battery_missing&&(state->battery_life<state->min_battery_life))
+        catmsg(TXT_ALERT_BATTERY_LOW);
+    if (state->max_load_avg&&(ipercent(state->load_avg/state->max_load_avg)>40))
+        catmsg(TXT_ALERT_LOAD_HIGH);
+    if (state->max_mem_used && (state->mem_used_percent > state->max_mem_used))
+        catmsg(TXT_ALERT_MEM_LOW);
+
+#undef catmsg
+
+    return nalerts;
+}
+#endif /* ENABLE_ALERTS */
+
 /**
  * Pause for the appropriate amount of time given our state
  *
- * If we are displaying the HUD then pause for the short
- * inter-sample time (usually 100msec).  If we are not displaying
- * the HUD then pause for the long inter-sample time (1 second).
- * We use select(2) to also watch for events on the control socket.
+ * If we are displaying the HUD then pause for the short inter-sample
+ * time (usually 100msec).  If we are not displaying the HUD then
+ * pause for the long inter-sample time (1 second).  We use select(2)
+ * to also watch for events on the control socket.
  *
  * Our return value decides whether or not we exit the loop we are in:
  * either the HUD's-Up short-time loop or the HUD's-Down long-time
@@ -901,7 +1148,7 @@ static int check(
     int pause_msecs = state->hud_is_up ? state->short_pause_msecs :
         state->long_pause_msecs;
 
-    if (state->verbose)
+    if (state->verbose > 1)
         syslog(
             LOG_WARNING,"check: pause is %d, HUD is %s",
             pause_msecs,state->hud_is_up ? "UP": "DOWN"
@@ -913,6 +1160,7 @@ static int check(
         int pause_secs;
         int pause_usecs;
         fd_set rfds;
+        int have_alerts;
 
         FD_ZERO(&rfds);
         FD_SET(state->sock_fd,&rfds);
@@ -942,17 +1190,11 @@ static int check(
             } /* else message told us to quit loop */
         } else {                        /* timeout */
             done = 1;
-            if (state->hud_is_up) {
+            if (state->hud_is_up && !state->toggle_mode) {
                 /* if hud is up, see if it is time to bring it down */
                 int now = time_in_milliseconds();
                 int delta_d = (now - state->t0_msecs);
 
-                if (state->verbose)
-                    syslog(
-                        LOG_WARNING,
-                        "HUD up, dt %d, duration %d, stuck %d",
-                        delta_d,state->duration_msecs,state->stuck
-                    );
                 if (!state->stuck && (delta_d >= state->duration_msecs))
                     quit_loop = 1;
             } /* otherwise done=1 will force us to sample and pause again */
@@ -964,6 +1206,8 @@ static int check(
         }
         if (restart_req)
             syslog(LOG_WARNING,"restart requested - not doing anything");
+        interrupted = restart_req = 0;
+#ifdef SIGINFO
         if (bang_bang) {
             syslog(LOG_WARNING,"bang, bang");
             done = 1;
@@ -972,7 +1216,17 @@ static int check(
             else
                 state->duration_msecs += state->display_msecs;
         }
-        interrupted = restart_req = bang_bang = 0;
+        bang_bang = 0;
+#endif
+#ifdef ENABLE_ALERTS
+        have_alerts = check_alerts(state);
+#else
+        have_alerts = 0;
+#endif /* ENABLE_ALERTS */
+        if (have_alerts && state->alerts_mode && !state->hud_is_up) {
+            quit_loop = done = 1;
+            state->stuck = 1;           /* alerts force them to unstick...? */
+        }
     } while (!done && !quit_loop);
     return quit_loop;
 }
@@ -1019,40 +1273,47 @@ static int pack_message(
     left = len;
 
 #define lead (!off ? "": " ")
-#define single_opt(f,o)                                         \
-    if (state->f) {                                             \
-        int x = snprintf(&packed[off],left,"%s-%s",lead,o);     \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
+#define single_opt(f,o)                                                 \
+    if (state->f) {                                                     \
+        int x = snprintf(&packed[off],left,"%s-%s",lead,o);             \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
     }
-#define integer_opt(f,o)                                        \
-    if (1) {                                                    \
+#define integer_opt(f,o)                                                \
+    do  {                                                               \
         int x=snprintf(&packed[off],left,"%s-%s %d",lead,o,state->f);   \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
-    }
-#define string_opt(f,o)                                         \
-    if (state->f) {                                             \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
+    } while (0);
+#define string_opt(f,o)                                                 \
+    if (state->f) {                                                     \
         int x=snprintf(&packed[off],left,"%s-%s %s",lead,o,state->f);   \
-        if (x < 0)                                              \
-            die(state,"pack: " o " failed !?");                 \
-        off += x;                                               \
-        left -= x;                                              \
+        if (x < 0)                                                      \
+            die(state,"pack: " o " failed !?");                         \
+        off += x;                                                       \
+        left -= x;                                                      \
     }
 
     single_opt(verbose,"v");
+    single_opt(debug,"g");
     single_opt(kill_server,"k");
     single_opt(down_hud,"D");
     single_opt(up_hud,"U");
     single_opt(stick_hud,"S");
     single_opt(unstick_hud,"N");
+    single_opt(toggle_mode,"t");
+    single_opt(alerts_mode,"a");
+    single_opt(cancel_alerts,"A");
     single_opt(countdown,"C");
     string_opt(font,"f");
     string_opt(net_iface,"i");
+    if (state->net_speed_mbits) {
+        integer_opt(net_speed_mbits,"X");
+    }
     integer_opt(display_msecs,"d");
     integer_opt(short_pause_msecs,"p");
     integer_opt(long_pause_msecs,"P");
@@ -1080,7 +1341,7 @@ static int kicked(
     struct stat sock_stat;
 
     if (state->foreground)
-        /* run in foreground - don't even try*/
+        /* run in foreground - don't even try */
         return 0;
     sock_fd = socket(PF_UNIX,SOCK_STREAM,0);
     if (sock_fd < 0) {
@@ -1202,7 +1463,7 @@ static void hud_up(
 {
     char *font = state->font ? state->font : DEFAULT_FONT;
 
-    if (state->verbose)
+    if (state->verbose > 1)
         syslog(LOG_WARNING,"HUD coming up, osd @ %p",state->osd);
 
 #ifdef CREATE_EACH_TIME
@@ -1234,9 +1495,6 @@ static void hud_up(
     state->duration_msecs = state->display_msecs;
 }
 
-/**
- * Bring down the HUD and Check to see if we should stick around
- */
 static void hud_down(
     osdhud_state_t     *state)
 {
@@ -1275,9 +1533,11 @@ static void handle_signal(
     case SIGHUP:
         restart_req = 1;
         break;
+#ifdef SIGINFO
     case SIGINFO:
         bang_bang = 1;
         break;
+#endif
     default:
         syslog(LOG_ERR,"received unexpected signal #%d",info->si_signo);
         break;
@@ -1314,7 +1574,6 @@ static void setup_daemon(
     openlog(state->argv0,syslog_flags,LOG_LOCAL0);
     if (state->verbose)
         syslog(LOG_INFO,"server starting; v%s",VERSION);
-    /* No running instance - create socket */
     state->sock_fd = socket(PF_UNIX,SOCK_STREAM,0);
     if (state->sock_fd < 0) {
         syslog(
@@ -1324,7 +1583,7 @@ static void setup_daemon(
         closelog();
         exit(1);
     }
-    if (bind(state->sock_fd,(struct sockaddr *)&state->addr,sizeof(state->addr))) {
+    if(bind(state->sock_fd,(struct sockaddr*)&state->addr,sizeof(state->addr))){
         perror("bind");
         exit(1);
     }
@@ -1339,10 +1598,12 @@ static void setup_daemon(
     init_signals(state);
 
     state->last_t = state->first_t = time_in_milliseconds();
-    state->kbps_ma = movavg_new(state->net_movavg_wsize);
-    state->pxps_ma = movavg_new(state->net_movavg_wsize);
+    state->ikbps_ma = movavg_new(state->net_movavg_wsize);
+    state->okbps_ma = movavg_new(state->net_movavg_wsize);
+    state->ipxps_ma = movavg_new(state->net_movavg_wsize);
+    state->opxps_ma = movavg_new(state->net_movavg_wsize);
 
-    probe_init();                       /* per-OS probe init */
+    probe_init(state);                  /* per-OS probe init */
 }
 
 /**
@@ -1388,11 +1649,7 @@ int main(
         state.sock_path = path;
     }
     state.addr.sun_family = AF_UNIX;
-    assert(
-        strlcpy(
-            state.addr.sun_path,state.sock_path,sizeof(state.addr.sun_path)
-        ) < sizeof(state.addr.sun_path)
-    );
+    assert_strlcpy(state.addr.sun_path,state.sock_path);
 
     /* Everything out here spews to stdout/stderr via (f)printf */
     if (kicked(&state)) {

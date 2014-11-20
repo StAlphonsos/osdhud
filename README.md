@@ -1,6 +1,6 @@
 # osdhud - minimalist heads-up display based on xosd
 
-*N.B.*: Please read [the wiki node](http://traq.haqistan.net/wiki/osdhud) for the most up-to-date information including links to source tarballs
+**N.B.**: Please read [the wiki node](http://traq.haqistan.net/wiki/osdhud) for the most up-to-date information including links to source tarballs
 
 osdhud is a heads-up display (hud) for X windows.  It uses the xosd
 library to draw its display over everything else and is designed to be
@@ -20,20 +20,20 @@ relatively easy to do if anyone cares.
 
 ## Administrivia
 
-I adhere loosely to the (git-flow)[http://nvie.com/posts/a-successful-git-branching-model/] concept in my development.  All of the real action happens
+I adhere loosely to the [git-flow](http://nvie.com/posts/a-successful-git-branching-model/) concept in my development.  All of the real action happens
 in the branch named `develop`.  The `master` branch should only have
 releases on it, in the form of merges from `develop` and tags.  I don't
 actually use the (supposedly very nice) `git-flow` tool/extension
 in my work.  The repository on github are synced more or less as I do
-things but the one on (traqistan)[http://trac.haqistan.net/browser/osdhud]
+things but the one on [traqistan](http://trac.haqistan.net/browser/osdhud)
 is always the most up-to-date.
 
-Please feel free to (contact me)[http://trac.haqistan.net/~attila]
+Please feel free to [contact me](http://trac.haqistan.net/~attila)
 if you want to collaborate.
 
 ## Building and Installing
 
-Use the make.sh script in the top-level directory to invoke make.  It
+Use the `make.sh` script in the top-level directory to invoke make.  It
 either uses -f BSDmakefile or -f GNUmakefile depending on what the
 native make command says.  Any arguments are passed directly to the
 `make` invocation:
@@ -63,7 +63,7 @@ specify PREFIX=dir as an argument to build.sh, e.g.
   $ ./make.sh PREFIX=$HOME install
 ```
 
-*N.B.* It doesn't work under Linux, the above was just an example.
+**N.B.** It doesn't work under Linux, the above was just an example.
 
 ## Usage
 

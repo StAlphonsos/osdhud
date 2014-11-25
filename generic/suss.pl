@@ -116,7 +116,8 @@ sub arrange_file_handles {
         $out->fdopen(fileno(STDOUT),"w") or die("fdopen(STDOUT): $!\n");
     } else {
         $in = IO::File->new();
-        my $input = $filename . ".in";
+        my $input = $filename;
+        $input .= ".in" unless (-f $input);
         $in->open("< $input") or die("$input: $!\n");
         $out = IO::File->new();
         $out->open("> $filename") or die("$filename: $!\n");

@@ -22,7 +22,8 @@ MANSECT?=1
 MANEXT?=$(MANSECT)
 MANSRC?=osdhud.mandoc
 MANPAGE?=osdhud.$(MANEXT)
-MANIFY?=$(CAT)
+MANIFY?=$(SUSS) -file=
+#MANIFY?=$(CAT)
 DOCS?=$(MANSRC)
 FILES?=osdhud.c freebsd.c openbsd.c osdhud.h $(DOCS)
 DIST_NAME?=$(PACKAGE_NAME)
@@ -47,13 +48,14 @@ osdhud: osdhud.o $(UNAME).o
 
 man-page:: $(MANPAGE)
 
+## CHEESY
 $(MANPAGE):: $(MANSRC)
-	$(MANIFY) $(MANSRC) > $(MANPAGE)
+	$(MANIFY)$(MANSRC) VERSION=$(VERSION) > $(MANPAGE)
 
 osdhud.o: osdhud.c osdhud.h
 osdhud.h: version.h
 version.h: version.h.in VERSION
-	$(SUSS) -file=version.h VERSION=${VERSION}
+	$(SUSS) -file=version.h VERSION=$(VERSION)
 
 $(UNAME).o: $(UNAME).c osdhud.h
 

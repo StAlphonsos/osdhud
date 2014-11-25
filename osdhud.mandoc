@@ -8,15 +8,24 @@
 .Sh SYNOPSIS
 .Nm osdhud
 .Op Fl vkgtkFDUSNCwh?
-.Op Fl 
+.Op Fl T Ar fmt
+.Op Fl d Ar msec
+.Op Fl p Ar msec
+.Op Fl P Ar msec
+.Op Fl f Ar font
+.Op Fl s Ar path
+.Op Fl i Ar iface
+.Op Fl X Ar mb/s
 .Sh DESCRIPTION
 The
 .Nm
 utility implements a heads-up display style view of the
-activity on your local machine.
-.Sh ENVIRONMENT
-For sections 1, 6, 7, and 8 only.
+activity on your local machine.  It uses the
+.Xr xosd 3
+library to create a transparent window with an on screen-display
+that appears to float over whatever else is displayed.
 .Sh FILES
+.Pa ~/.osdhud_@VERSION@
 .Sh EXIT STATUS
 .Sh EXAMPLES
 .Sh SEE ALSO

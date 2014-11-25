@@ -24,11 +24,131 @@ activity on your local machine.  It uses the
 .Xr xosd 3
 library to create a transparent window with an on screen-display
 that appears to float over whatever else is displayed.
+.Pp
+.Nm
+normally runs as a daemon and listens on a Unix-domain socket in your
+home directory for commands.  When first started it will fork a daemon
+child if it cannot make contact with an existing daemon via the
+socket.  The daemon gathers statistics in the background and responds
+to commands on its socket.  You can disable the daemon by running
+.Nm
+in the foreground via the
+.Fl F
+option.  When run in the foreground any output from
+.Nm
+goes to stderr.  Otherwise the
+.Nm
+daemon will log to
+.Xr syslog
+once daemonized and to stderr if it encounters an error before
+daemonizing.
+.Ss OPTIONS
+.Bl -tag -width Ds
+.It Fl v
+Turn up verbosity.
+.Nm
+does not normally produce any output other than its display.
+Increasing verbosity with multiple
+.Fl v
+options will increase the level of log output.
+.It Fl g
+Turn on debugging, which produces much more copious
+log output, either to stderr or
+.Xr syslog
+.It Fl k
+Ask any daemon that might be listening on the socket to
+shut down (kill itself) and clean up.  The socket will be
+removed before the daemon exits.
+.It Fl t
+Tell the daemon to toggle its display regardless of other
+settings.  If the HUD is not displayed then it will be displayed
+and
+.Dq stuck
+to the screen.  If the HUD is up then it will be brought down.
+It is useful to bind
+.Dl osdhud -t
+to a key in your windowing environment; hitting this key causes
+the HUD to toggle.
+.It Fl F
+Force
+.Nm
+to run in the foreground and not fork a daemon if needed or talk
+to an existing daemon.  You can terminate it by hitting ^C.
+.It Fl D
+Bring the HUD down if it is up.
+.It Fl U
+Bring the HUD up if it is down.  It will stay up for at least
+the standard display time (c.f. the
+.Fl d
+option).
+.It Fl S
+Stick the HUD to the display: the display time is ignored and
+the HUD will stay up until some command arrives that has
+that effect, e.g. the
+.Fl D ,
+.Fl N
+or
+.Fl t
+options.
+.It Fl N
+Unstick the display if it is stuck.  The display will fade
+after however much of the display time that is left has expired.
+.It Fl C
+Display a countdown of the number of seconds left in the
+HUD display or the string
+.Dq -stuck-
+if the HUD is stuck to the display.  The countdown is displayed in
+the bottom right corner of the screen when enabled.
+.It Fl w
+Do not display swap statistics.
+.It Fl h Fl ?
+Produce a usage message on stdout and exit.
+.It Fl T Ar fmt
+Specify a
+.Xr strftime 3
+style format string for the date/time display at the bottom
+of the HUD.  The default is
+.Dq %Y-%m-%d %H:%M:%S
+.It Fl d Ar msec
+Specify the display time in milliseconds.  The default is
+4000 milliseconds (4 seconds).
+.It Fl p Ar msec
+Set the short sampling pause milliseconds.
+.It Fl P Ar msec
+Set the long sampling pause in milliseconds.
+.It Fl f Ar font
+Set the font used in the HUD display.  The default is
+.Dq -adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*
+.It Fl s Ar path
+Set the location of the Unix-domain socket used for communication
+between the command line and the daemon.  The default is
+.Pa ~/.osdhud_@VERSION@
+It is not usually necessary to tweak this but might be if
+e.g. your home directory is on a remote filesystem.
+.It Fl i Ar iface
+Set the network interface being watched by
+the network statistics gathering code.  Under OpenBSD interface
+group names can be specified, e.g.
+.Dq egress
+in which case interfaces in that group will have their
+aggregate statistics displayed in the HUD.
+.It Fl X Ar mb/s
+Fix our idea of the maximum network bandwidth available in
+megabits/second.  Must be an integer.  If not specified
+then
+.Nm
+will attempt to automatically guess the maximum speed
+based on the media flags available from the
+.Dq SIOCGIFMEDIA
+.Xr ioctl 2
+call.
 .Sh FILES
 .Pa ~/.osdhud_@VERSION@
-.Sh EXIT STATUS
 .Sh EXAMPLES
 .Sh SEE ALSO
+.Xr sysctl 3
+.Xr ioctl 2
+.Xr ifconfig 8
 .Xr xosd 3
 .Sh AUTHORS
 attila <attila@stalphonsos.com>

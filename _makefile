@@ -20,10 +20,9 @@ MAKESYS?=make.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
 SUDIRS?=
 MANSECT?=1
 MANEXT?=$(MANSECT)
+## Can be set per-OS
 MANSRC?=osdhud.mandoc
 MANPAGE?=osdhud.$(MANEXT)
-MANIFY?=$(SUSS) -file=
-#MANIFY?=$(CAT)
 DOCS?=$(MANSRC)
 FILES?=osdhud.c freebsd.c openbsd.c osdhud.h $(DOCS)
 DIST_NAME?=$(PACKAGE_NAME)
@@ -46,11 +45,29 @@ all:: $(BINARIES) man-page
 osdhud: osdhud.o $(UNAME).o
 	$(CC) $(LDFLAGS) -o $@ osdhud.o $(UNAME).o $(LIBS)
 
+## My thinking here is that I'm just going to go with OpenBSD mandoc
+## since osdhud is so far only really usable under OpenBSD.  I would
+## like to explore writing manuals in multimarkdown and producing
+## mandoc output but it doesn't seem like the tools that exist right
+## now are that great there... a lot of mandoc features are not
+## accessible this way, or maybe I'm missing something.
+##
+## osdhud.mandoc therefore is just a straight mandoc source file,
+## unashamedly OpenBSD-specific.  I'm writing that way to get
+## experience with how to use mandoc well.  Since I want @VERSION@
+## expanded in the final osdhud.1 I'll use my Perl keyword expander to
+## do that.  If I have to write man pages for other OSes then I'll try
+## doing something in mmd and translating to nroff -man or, if mandoc
+## is available mandoc.  I could then take the opportunity to see how
+## hard it would be to go the extra mile to mandoc that is equivalent
+## to the hand-written mandoc file.
+
+MANIFY?=$(SUSS) VERSION=$(VERSION)
+
 man-page:: $(MANPAGE)
 
-## CHEESY
-$(MANPAGE):: $(MANSRC)
-	$(MANIFY)$(MANSRC) VERSION=$(VERSION) > $(MANPAGE)
+$(MANPAGE):: $(MANSRC) VERSION
+	$(MANIFY) < $(MANSRC) > $(MANPAGE)
 
 osdhud.o: osdhud.c osdhud.h
 osdhud.h: version.h

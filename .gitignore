@@ -2,3 +2,4 @@ osdhud
 *.o
 *~
 version.h
+*.[0-9]

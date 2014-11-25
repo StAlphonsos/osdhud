@@ -2,6 +2,8 @@
 
 ECHO?=echo
 SED?=sed
+CAT?=cat
+CP?=cp
 LN?=ln
 RM=rm
 TAR?=tar

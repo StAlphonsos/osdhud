@@ -18,13 +18,19 @@ BINARIES=osdhud
 
 MAKESYS?=make.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
 SUDIRS?=
-FILES?=osdhud.c freebsd.c openbsd.c osdhud.h
+MANSECT?=1
+MANEXT?=$(MANSECT)
+MANSRC?=osdhud.mandoc
+MANPAGE?=osdhud.$(MANEXT)
+MANIFY?=$(CAT)
+DOCS?=$(MANSRC)
+FILES?=osdhud.c freebsd.c openbsd.c osdhud.h $(DOCS)
 DIST_NAME?=$(PACKAGE_NAME)
 DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
 DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
 DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
-DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc
+DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc $(MANPAGE)
 
 default: help
 
@@ -34,10 +40,15 @@ help::
 	@$(ECHO) '    bin dir: ' $(BINDIR)
 	@$(ECHO) '    man dir: ' $(MANDIR)
 
-all:: $(BINARIES)
+all:: $(BINARIES) man-page
 
 osdhud: osdhud.o $(UNAME).o
 	$(CC) $(LDFLAGS) -o $@ osdhud.o $(UNAME).o $(LIBS)
+
+man-page:: $(MANPAGE)
+
+$(MANPAGE):: $(MANSRC)
+	$(MANIFY) $(MANSRC) > $(MANPAGE)
 
 osdhud.o: osdhud.c osdhud.h
 osdhud.h: version.h
@@ -49,8 +60,9 @@ $(UNAME).o: $(UNAME).c osdhud.h
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-install:: $(BINARIES)
+install:: $(BINARIES) man-page
 	$(INSTALL_X) $(BINARIES) $(BINDIR)
+	$(INSTALL) $(MANPAGE) $(MANDIR)/man$(MANEXT)/
 
 clean::
 	$(RM) -f osdhud.o $(UNAME).o osdhud version.h $(DOC_EPHEM)

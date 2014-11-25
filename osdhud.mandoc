@@ -1,0 +1,25 @@
+.\" -*- mode:nroff; indent-tabs-mode:nil; -*-
+.Dd $Mdocdate$
+.Dt OSDHUD 1
+.Os
+.Sh NAME
+.Nm osdhud
+.Nd heads-up system status display for X11
+.Sh SYNOPSIS
+.Nm osdhud
+.Op Fl vkgtkFDUSNCwh?
+.Op Fl 
+.Sh DESCRIPTION
+The
+.Nm
+utility implements a heads-up display style view of the
+activity on your local machine.
+.Sh ENVIRONMENT
+For sections 1, 6, 7, and 8 only.
+.Sh FILES
+.Sh EXIT STATUS
+.Sh EXAMPLES
+.Sh SEE ALSO
+.Xr xosd 3
+.Sh AUTHORS
+attila <attila@stalphonsos.com>

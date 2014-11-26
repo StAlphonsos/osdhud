@@ -7,7 +7,7 @@
 .Nd heads-up system status display for X11
 .Sh SYNOPSIS
 .Nm osdhud
-.Op Fl vkgtkFDUSNCwh?
+.Op Fl vkgtknFDUSNCwh?
 .Op Fl T Ar fmt
 .Op Fl d Ar msec
 .Op Fl p Ar msec
@@ -42,6 +42,32 @@ daemon will log to
 .Xr syslog
 once daemonized and to stderr if it encounters an error before
 daemonizing.
+.Ss USAGE
+Normally,
+.Nm
+is started as a part of your X session.  For instance addining the following
+lines to your
+.Pa ~/.xinitrc
+file:
+.Bd -literal -offset indent -compact
+osdhud -Cwn -i egress
+.Ed
+will start the
+.Nm
+daemon watching interfaces in the
+.Oq egress
+group, will not show swap statistics, will show the display countdown
+and will not display anything when it starts up.  Running
+.Dl osdhud
+on the command line or from a key binding will bring the HUD up
+for the display interval.  Running
+.Dl osdhud
+while the HUD is up will increase the display time for the current
+display; thus by default hitting a key bound to
+.Dl osdhud
+will first bring the HUD up and then increase the amount of time it
+remains visible.  You can force the HUD to disappear with
+.Dl osdhud -D
 .Ss OPTIONS
 .Bl -tag -width Ds
 .It Fl v
@@ -59,6 +85,11 @@ log output, either to stderr or
 Ask any daemon that might be listening on the socket to
 shut down (kill itself) and clean up.  The socket will be
 removed before the daemon exits.
+.It Fl n
+Do not bring the HUD up when first started.  If this option
+is not present then
+.Nm
+will display the HUD immediately upon daemonizing.
 .It Fl t
 Tell the daemon to toggle its display regardless of other
 settings.  If the HUD is not displayed then it will be displayed
@@ -96,7 +127,7 @@ after however much of the display time that is left has expired.
 .It Fl C
 Display a countdown of the number of seconds left in the
 HUD display or the string
-.Dq -stuck-
+.Oq -stuck-
 if the HUD is stuck to the display.  The countdown is displayed in
 the bottom right corner of the screen when enabled.
 .It Fl w
@@ -108,7 +139,7 @@ Specify a
 .Xr strftime 3
 style format string for the date/time display at the bottom
 of the HUD.  The default is
-.Dq %Y-%m-%d %H:%M:%S
+.Oq %Y-%m-%d %H:%M:%S
 .It Fl d Ar msec
 Specify the display time in milliseconds.  The default is
 4000 milliseconds (4 seconds).
@@ -118,7 +149,7 @@ Set the short sampling pause milliseconds.
 Set the long sampling pause in milliseconds.
 .It Fl f Ar font
 Set the font used in the HUD display.  The default is
-.Dq -adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*
+.Oq -adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*
 .It Fl s Ar path
 Set the location of the Unix-domain socket used for communication
 between the command line and the daemon.  The default is
@@ -129,7 +160,7 @@ e.g. your home directory is on a remote filesystem.
 Set the network interface being watched by
 the network statistics gathering code.  Under OpenBSD interface
 group names can be specified, e.g.
-.Dq egress
+.Oq egress
 in which case interfaces in that group will have their
 aggregate statistics displayed in the HUD.
 .It Fl X Ar mb/s
@@ -139,9 +170,13 @@ then
 .Nm
 will attempt to automatically guess the maximum speed
 based on the media flags available from the
-.Dq SIOCGIFMEDIA
+.Oq SIOCGIFMEDIA
 .Xr ioctl 2
-call.
+call.  The guess may not be perfect so depending on your
+networking hardware you might have to use
+.Fl X
+to get the percentage bar display for network utilization
+to appear in the HUD.
 .Sh FILES
 .Pa ~/.osdhud_@VERSION@
 .Sh EXAMPLES

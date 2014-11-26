@@ -57,10 +57,9 @@ osdhud: osdhud.o $(UNAME).o
 ## experience with how to use mandoc well.  Since I want @VERSION@
 ## expanded in the final osdhud.1 I'll use my Perl keyword expander to
 ## do that.  If I have to write man pages for other OSes then I'll try
-## doing something in mmd and translating to nroff -man or, if mandoc
-## is available mandoc.  I could then take the opportunity to see how
-## hard it would be to go the extra mile to mandoc that is equivalent
-## to the hand-written mandoc file.
+## doing something in mmd and translating to nroff -man.  I could then
+## take the opportunity to see how hard it would be to go the extra
+## mile to mandoc that is equivalent to the hand-written mandoc file.
 
 MANIFY?=$(SUSS) VERSION=$(VERSION)
 
@@ -79,7 +78,7 @@ $(UNAME).o: $(UNAME).c osdhud.h
 .c.o:
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-install:: $(BINARIES) man-page
+install:: all
 	$(INSTALL_X) $(BINARIES) $(BINDIR)
 	$(INSTALL) $(MANPAGE) $(MANDIR)/man$(MANEXT)/
 

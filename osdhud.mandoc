@@ -177,6 +177,7 @@ networking hardware you might have to use
 .Fl X
 to get the percentage bar display for network utilization
 to appear in the HUD or to scale properly.
+.El
 .Sh FILES
 .Pa ~/.osdhud_@VERSION@
 .Sh SEE ALSO

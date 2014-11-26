@@ -176,10 +176,9 @@ call.  The guess may not be perfect so depending on your
 networking hardware you might have to use
 .Fl X
 to get the percentage bar display for network utilization
-to appear in the HUD.
+to appear in the HUD or to scale properly.
 .Sh FILES
 .Pa ~/.osdhud_@VERSION@
-.Sh EXAMPLES
 .Sh SEE ALSO
 .Xr sysctl 3
 .Xr ioctl 2

@@ -65,11 +65,7 @@
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
-#ifdef OSDHUD_64BIT
-# define SIZEOF_F "%lu"
-#else
-# define SIZEOF_F "%u"
-#endif
+#define SIZEOF_F "%lu"
 #define SIZE_T_F SIZEOF_F
 
 #define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))

@@ -78,6 +78,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
+#include <sys/vmmeter.h>
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_media.h>

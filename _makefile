@@ -16,7 +16,7 @@
 
 BINARIES=osdhud
 
-MAKESYS?=make.sh GNUmakefile BSDmakefile _makefile bsd gnu generic
+MAKESYS?=GNUmakefile BSDmakefile _makefile bsd gnu generic configure
 SUDIRS?=
 MANSECT?=1
 MANEXT?=$(MANSECT)
@@ -69,7 +69,9 @@ $(MANPAGE):: $(MANSRC) VERSION
 	$(MANIFY) < $(MANSRC) > $(MANPAGE)
 
 osdhud.o: osdhud.c osdhud.h
-osdhud.h: version.h
+osdhud.h: config.h version.h
+
+# config.h doesn't need to be regenerated normally
 version.h: version.h.in VERSION
 	$(SUSS) -file=version.h VERSION=$(VERSION)
 
@@ -86,7 +88,7 @@ clean::
 	$(RM) -f osdhud.o $(UNAME).o osdhud version.h $(DOC_EPHEM)
 
 distclean:: clean
-	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ)
+	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ) Makefile config.h
 	$(RM) -rf $(DIST_TMP)
 
 dist: distclean $(DIST_TAR_GZ)

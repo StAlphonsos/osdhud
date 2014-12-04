@@ -18,12 +18,6 @@ PTHREAD_LDFLAGS!=pthread-config --ldflags
 PTHREAD_LIBS!=pthread-config --libs
 .endif
 
-# Perl is ubiq and so is this idiom
-WORDSIZE!=perl -MConfig -e 'printf("%s\n",$$Config{longsize})'
-.if ${WORDSIZE} == 8
-CFLAGS += -DOSDHUD_64BIT
-.endif
-
 ## N.B. xosd-config --cflags output is obnoxious, at least on my box:
 ##   $ xosd-config --cflags
 ##   -O2 -pipe -fno-strict-aliasing -std=gnu89 -I/usr/local/include -Wall

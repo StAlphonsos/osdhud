@@ -45,6 +45,9 @@
 #include <time.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <sys/un.h>
 
 #ifdef __FreeBSD__
 # define HAVE_SETPROCTITLE 1
@@ -54,10 +57,6 @@
 # define HAVE_SETPROCTITLE 1
 # include <tzfile.h>
 #endif
-
-#include <sys/socket.h>
-#include <net/if.h>
-#include <sys/un.h>
 
 #include <xosd.h>
 #include <Judy.h>
@@ -82,8 +81,8 @@ struct movavg {
     float              *window;
 };
 
-# define MAX_WSIZE 10000 /* max size of moving average window */
-# define MAX_ALERTS_SIZE 1024
+#define MAX_WSIZE 10000 /* max size of moving average window */
+#define MAX_ALERTS_SIZE 1024
 
 /*
  * Application state

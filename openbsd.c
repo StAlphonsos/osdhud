@@ -127,6 +127,7 @@ struct openbsd_data {
     struct diskstats   *drive_stats;
     char              **drive_names;    /* points into drive_names_raw */
     char               *drive_names_raw;
+    size_t              drive_names_raw_size;
 };
 
 static int pageshift;
@@ -260,6 +261,7 @@ void probe_init(
     obsd->drive_stats = NULL;
     obsd->drive_names = NULL;
     obsd->drive_names_raw = NULL;
+    obsd->drive_names_raw_size = 0;
 
     state->per_os_data = (void *)obsd;
 }
@@ -568,7 +570,7 @@ void probe_disk(
     mib[1] = HW_DISKCOUNT;
     size = sizeof(ndrive);
     assert(!sysctl(mib,2,&ndrive,&size,NULL,0));
-    assert(ndrive);
+    assert(ndrive);                    /* ... otherwise, ? */
     /* Get ready to acquire data */
     if (ndrive != obsd->ndrive) {
         free(obsd->drive_stats);
@@ -576,6 +578,7 @@ void probe_disk(
         free(obsd->drive_names_raw);
         obsd->drive_stats = NULL;
         obsd->drive_names = NULL;
+        obsd->drive_names_raw_size = 0;
         obsd->drive_names_raw = NULL;
         obsd->ndrive = ndrive;
     }
@@ -591,9 +594,10 @@ void probe_disk(
     size = 0;
     mib[1] = HW_DISKNAMES;
     assert(!sysctl(mib,2,NULL,&size,NULL,0));
-    if (!obsd->drive_names_raw)
-        obsd->drive_names_raw = malloc(size);
+    if (obsd->drive_names_raw_size != size)
+        obsd->drive_names_raw = realloc(obsd->drive_names_raw,size);
     assert(obsd->drive_names_raw);
+    obsd->drive_names_raw_size = size;
     memset(obsd->drive_names_raw,0,size);
     assert(!sysctl(mib,2,obsd->drive_names_raw,&size,NULL,0));
     /* Make sure there is space to store drive name pointers */

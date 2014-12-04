@@ -2,7 +2,7 @@
 
 **N.B.**: Please read [the wiki node](http://traq.haqistan.net/wiki/osdhud) for the most up-to-date information including links to source tarballs
 
-osdhud is a heads-up display (hud) for X windows.  It uses the xosd
+`osdhud` is a heads-up display (hud) for X windows.  It uses the xosd
 library to draw its display over everything else and is designed to be
 trivial to integrate into whatever desktop environment you use.  That
 much said, I use
@@ -14,9 +14,11 @@ machine, hit a key.  If you want to know more there's always
 xterm -e systat :-)
 
 At the moment it only is purported to work under OpenBSD.  FreeBSD
-might still work but I have not sat in front of a FreeBSD machine
-in a few months.  Linux is unsupported at the moment but should be
-relatively easy to do if anyone cares.
+might still work but I have not sat in front of a FreeBSD machine in a
+few months.  Linux is unsupported at the moment but should be
+relatively easy to do if anyone cares.  I guess a MacOSX/iOS port
+could exist but I doubt `osdhud` is shiny enough to attract any
+attention from that crowd...
 
 ## Administrivia
 
@@ -91,4 +93,7 @@ display use the `-n` option; this can be useful in your `~/.xinitrc`
 or similar script if you don't want the HUD to flash for a few seconds
 when you start X windows.
 
-There is still not a man page, but that's high on the list.
+More details on the options and usage can be found in the man page.
+The source file is `osdhud.mandoc`.  I run it through my Perl
+`@variable@` expander (`generic/suss.pl`) to get `@VERSION@`
+expanded when `osdhud.1` (the final man page) is generated.

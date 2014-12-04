@@ -182,6 +182,14 @@ void update_disk_statistics(
     unsigned long long  delta_reads,
     unsigned long long  delta_writes)
 {
+    if (state->delta_t) {
+        float dt = (float)state->delta_t / 1000.0;
+
+        state->disk_rkbps = (movavg_add(state->rbdisk_ma,delta_rbytes)/dt)/KILO;
+        state->disk_wkbps = (movavg_add(state->wbdisk_ma,delta_wbytes)/dt)/KILO;
+        state->disk_rxps  = movavg_add(state->rxdisk_ma,delta_reads) / dt;
+        state->disk_wxps  = movavg_add(state->wxdisk_ma,delta_writes) / dt;
+    }
 }
 
 static unsigned long time_in_microseconds(
@@ -453,13 +461,8 @@ static void display_hudmeta(
     unsigned int left = (dt < state->duration_msecs) ?
         state->duration_msecs - dt : 0;
     unsigned int left_secs = (left + 500) / 1000;
-#ifdef USE_TWO_OSDS
     xosd *osd = state->osd2;
     int line = 0;
-#else
-    xosd *osd = state->osd;
-    int line = state->disp_line++;
-#endif
     char now_str[512] = { 0 };
     char left_s[512] = { 0 };
 
@@ -493,9 +496,6 @@ static void display_hudmeta(
         else
             assert_strlcpy(left_s,TXT__BLINK_);
     }
-#ifndef USE_TWO_OSDS
-    line = ++state->disp_line;
-#endif /* USE_TWO_OSDS */
     if (state->time_fmt)
         xosd_display(
             osd,line,XOSD_printf,"%s%s%s%s",now_str,
@@ -736,6 +736,10 @@ static void init_state(
     state->net_peak_kbps = state->net_peak_pxps = 0;
     state->ikbps_ma = state->ipxps_ma =
         state->okbps_ma = state->opxps_ma = NULL;
+    state->rxdisk_ma = state->wxdisk_ma =
+        state->rbdisk_ma = state->wbdisk_ma = NULL;
+    state->disk_rkbps = state->disk_wkbps =
+        state->disk_rxps = state->disk_wxps = 0;
     state->battery_missing = 0;
     state->battery_life = 0;
     memset(state->battery_state,0,sizeof(state->battery_state));
@@ -746,9 +750,7 @@ static void init_state(
     state->osd = NULL;
     memset(state->message,0,sizeof(state->message));
     state->message_seen = 0;
-#ifdef USE_TWO_OSDS
     state->osd2 = NULL;
-#endif
     state->disp_line = 0;
     memset(state->errbuf,0,sizeof(state->errbuf));
 }
@@ -811,9 +813,7 @@ static void cleanup_state(
     if (state) {
         if (state->osd) {
             xosd_destroy(state->osd);
-#ifdef USE_TWO_OSDS
             xosd_destroy(state->osd2);
-#endif
         }
         probe_cleanup(state);
         if (state->time_fmt) {
@@ -834,6 +834,14 @@ static void cleanup_state(
         state->ipxps_ma = NULL;
         movavg_free(state->opxps_ma);
         state->opxps_ma = NULL;
+        movavg_free(state->rxdisk_ma);
+        state->rxdisk_ma = NULL;
+        movavg_free(state->wxdisk_ma);
+        state->wxdisk_ma = NULL;
+        movavg_free(state->rbdisk_ma);
+        state->rbdisk_ma = NULL;
+        movavg_free(state->wbdisk_ma);
+        state->wbdisk_ma = NULL;
     }
 }
 
@@ -1447,7 +1455,6 @@ static xosd *create_big_osd(
     return osd;
 }
 
-#ifdef USE_TWO_OSDS
 static xosd *create_small_osd(
     osdhud_state_t     *state,
     char               *font)
@@ -1467,7 +1474,6 @@ static xosd *create_small_osd(
 
     return osd;
 }
-#endif
 
 static void hud_up(
     osdhud_state_t     *state)
@@ -1477,30 +1483,19 @@ static void hud_up(
     if (state->verbose > 1)
         syslog(LOG_WARNING,"HUD coming up, osd @ %p",state->osd);
 
-#ifdef CREATE_EACH_TIME
-    state->osd = create_big_osd(state,font);
-# ifdef USE_TWO_OSDS
-    state->osd2 = create_small_osd(state,font);
-# endif
-#else /* !CREATE_EACH_TIME */
     if (!state->osd) {
         state->osd = create_big_osd(state,font);
-# ifdef USE_TWO_OSDS
         state->osd2 = create_small_osd(state,font);
-# endif
     } else {
         if (xosd_show(state->osd)) {
             syslog(LOG_ERR,"xosd_show failed (big): %s",xosd_error);
             exit(1);
         }
-# ifdef USE_TWO_OSDS
         if (xosd_show(state->osd2)) {
             syslog(LOG_ERR,"xosd_show failed (small): %s",xosd_error);
             exit(1);
         }
-# endif
     }
-#endif
     state->hud_is_up = 1;
     state->t0_msecs = time_in_milliseconds();
     state->duration_msecs = state->display_msecs;
@@ -1512,21 +1507,10 @@ static void hud_down(
     if (state->verbose)
         syslog(LOG_WARNING,"HUD coming down");
 
-#ifdef CREATE_EACH_TIME
-    xosd_destroy(state->osd);
-    state->osd = NULL;
-# ifdef USE_TWO_OSDS
-    xosd_destroy(state->osd2);
-    state->osd2 = NULL;
-# endif
-#else /* !CREATE_EACH_TIME */
     if (state->osd) {
         xosd_hide(state->osd);
-# ifdef USE_TWO_OSDS
         xosd_hide(state->osd2);
-# endif
     }
-#endif
 
     state->hud_is_up = 0;
 }

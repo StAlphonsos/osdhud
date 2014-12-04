@@ -5,10 +5,6 @@
  * @brief probe functions for osdhud on OpenBSD
  *
  * Implement the probe_xxx() functions used by osdhud.c for OpenBSD.
- *
- * Much of this code is lifted liberally from the OpenBSD systat
- * command whose source code can be found in /usr/src/usr.bin/systat
- * in the OpenBSD source tree as of version 5.5.
  */
 
 /* LICENSE:
@@ -32,19 +28,52 @@
  *
  * Portions of this code were also taken from
  * /usr/src/usr.bin/systat/systat.h, which has a BSD 3-clause
- * license on it as of OpenBSD 5.5:
- *
+ * license as of OpenBSD 5.5 preceded by the following copyright:
  * Copyright (c) 1980, 1989, 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Portions of this code were also taken from
- * /usr/src/usr.bin/top/machine.c is also BSD 3-clause:
- *
+ * /usr/src/usr.bin/top/machine.c, which has a BSD 3-clause
+ * license as of OpenBSD 5.5 preceded by the following copyright:
  * Copyright (c) 1994 Thorsten Lockert <tholo@sigmasoft.com>
  * All rights reserved.
+ *
+ * Portions of this code were also taken from
+ * /usr/src/usr.bin/vmstat/dkstats.c, which has the following
+ * copyright and license:
+ * Copyright (c) 1996 John M. Vinopal
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed for the NetBSD Project
+ *      by John M. Vinopal.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include "osdhud.h"
+#include <unistd.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -57,6 +86,7 @@
 #include <sys/ioctl.h>
 #include <sys/swap.h>
 #include <machine/apmvar.h>
+#include <sys/disk.h>
 
 #define APM_DEV "/dev/apm"
 #define LOG1024        10
@@ -92,6 +122,10 @@ struct openbsd_data {
     struct swapent     *swap_devices;
     int                 ncpus;
     Pvoid_t             groups;         /* judy str->ptr hash */
+    int                 ndrive;
+    struct diskstats   *drive_stats;
+    char              **drive_names;    /* points into drive_names_raw */
+    char               *drive_names_raw;
 };
 
 static int pageshift;
@@ -214,11 +248,18 @@ void probe_init(
     mib[0] = CTL_HW;
     mib[1] = HW_NCPU;
     size = sizeof(obsd->ncpus);
+    obsd->ncpus = 0;
     assert(!sysctl(mib,2,&obsd->ncpus,&size,NULL,0));
     if (!state->max_load_avg)
         state->max_load_avg = 2.0 * (float)obsd->ncpus; /* xxx 2? yeah... */
     VSPEW("ncpus=%d, max load avg=%f",obsd->ncpus,state->max_load_avg);
     obsd->groups = NULL;
+
+    obsd->ndrive = 0;
+    obsd->drive_stats = NULL;
+    obsd->drive_names = NULL;
+    obsd->drive_names_raw = NULL;
+
     state->per_os_data = (void *)obsd;
 }
 
@@ -231,6 +272,9 @@ void probe_cleanup(
         int rc = 0;
         uint8_t group[IFNAMSIZ] = { 0 };
 
+        free(obsd->drive_stats);
+        free(obsd->drive_names);
+        free(obsd->drive_names_raw);
         free(obsd->swap_devices);
         free(obsd->ifstats);
         obsd->ifstats = NULL;
@@ -509,10 +553,73 @@ void probe_net(
     os_data->nifs = nifs;
 }
 
+/* Many clues taken from /usr/src/usr.bin/vmstat/dkstats.c */
 void probe_disk(
     osdhud_state_t     *state)
 {
-    /* XXX grab diskstat structs and do something meaningful with them */
+    struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+    int ndrive = 0;
+    int mib[2];
+    size_t size;
+
+    /* How many drives are there? */
+    mib[0] = CTL_HW;
+    mib[1] = HW_DISKCOUNT;
+    size = sizeof(ndrive);
+    assert(!sysctl(mib,2,&ndrive,&size,NULL,0));
+    assert(ndrive);
+    /* Get ready to acquire data */
+    if (ndrive != obsd->ndrive) {
+        free(obsd->drive_stats);
+        free(obsd->drive_names);
+        free(obsd->drive_names_raw);
+        obsd->drive_stats = NULL;
+        obsd->drive_names = NULL;
+        obsd->drive_names_raw = NULL;
+        obsd->ndrive = ndrive;
+    }
+    /* Get drive stats */
+    size = obsd->ndrive * sizeof(struct diskstats);
+    if (!obsd->drive_stats)
+        obsd->drive_stats = malloc(size);
+    assert(obsd->drive_stats);
+    memset(obsd->drive_stats,0,size);
+    mib[1] = HW_DISKSTATS;
+    assert(!sysctl(mib,2,obsd->drive_stats,&size,NULL,0));
+    /* Get drive names (raw list, comma-sep) */
+    size = 0;
+    mib[1] = HW_DISKNAMES;
+    assert(!sysctl(mib,2,NULL,&size,NULL,0));
+    if (!obsd->drive_names_raw)
+        obsd->drive_names_raw = malloc(size);
+    assert(obsd->drive_names_raw);
+    memset(obsd->drive_names_raw,0,size);
+    assert(!sysctl(mib,2,obsd->drive_names_raw,&size,NULL,0));
+    /* Make sure there is space to store drive name pointers */
+    if (!obsd->drive_names)
+        obsd->drive_names = calloc(obsd->ndrive,sizeof(char *));
+    VSPEW("found %d disks",obsd->ndrive);
+    {
+#define dd(nn) d->ds_##nn
+        int i;
+        char *bufpp = obsd->drive_names_raw;
+        char *name;
+
+        for (i = 0; i < obsd->ndrive && (name = strsep(&bufpp,",")); i++) {
+            struct diskstats *d = &obsd->drive_stats[i];
+
+            obsd->drive_names[i] = name;
+            /* name is something like: sd0:e6149932cc95fda9,... */
+            while (*name && *name != ':')
+                name++;
+            if (*name == ':')
+                *name = '\0';
+            /* Jump to next name */
+            name = strsep(&bufpp,",");
+            VSPEW("disk#%d: %s rxfer=%llu wxfer=%llu seek=%llu rbytes=%llu wbyes=%llu",i,obsd->drive_names[i],dd(rxfer),dd(wxfer),dd(seek),dd(rbytes),dd(wbytes));
+#undef dd
+        }
+    }
 }
 
 /* c.f. apm(4) */

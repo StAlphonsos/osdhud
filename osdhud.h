@@ -65,10 +65,10 @@
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
-#if __amd64__                           /* XXX WRONG! */
-# define SIZEOF_F "%ld"
+#ifdef OSDHUD_64BIT
+# define SIZEOF_F "%lu"
 #else
-# define SIZEOF_F "%d"
+# define SIZEOF_F "%u"
 #endif
 #define SIZE_T_F SIZEOF_F
 
@@ -270,7 +270,11 @@ typedef struct osdhud_state {
 #define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
 #define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
 
-/* shared across operating systems */
+/*
+ * Per-OS modules call in to these functions to report their
+ * statistics for network and disk
+ */
+
 void update_net_statistics(
     osdhud_state_t     *state,
     unsigned long       delta_ibytes,
@@ -278,8 +282,16 @@ void update_net_statistics(
     unsigned long       delta_ipax,
     unsigned long       delta_opax);
 
+void update_disk_statistics(
+    osdhud_state_t     *state,
+    unsigned long long  delta_rbytes,
+    unsigned long long  delta_wbytes,
+    unsigned long long  delta_reads,
+    unsigned long long  delta_writes);
+
 /*
- * probe_xxx() function prototypes
+ * probe_xxx() function prototypes; each os-specific module
+ * implements these, e.g. openbsd.c, freebsd.c.
  */
 
 void probe_init(

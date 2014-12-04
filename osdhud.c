@@ -175,6 +175,15 @@ static void clear_net_statistics(
     movavg_clear(state->opxps_ma);
 }
 
+void update_disk_statistics(
+    osdhud_state_t     *state,
+    unsigned long long  delta_rbytes,
+    unsigned long long  delta_wbytes,
+    unsigned long long  delta_reads,
+    unsigned long long  delta_writes)
+{
+}
+
 static unsigned long time_in_microseconds(
     void)
 {
@@ -219,8 +228,10 @@ int elapsed(
 
     days = secs / SECSPERDAY;
     secs %= SECSPERDAY;
+
     hours = secs / SECSPERHOUR;
     secs %= SECSPERHOUR;
+
     mins = secs / SECSPERMIN;
     secs %= SECSPERMIN;
 

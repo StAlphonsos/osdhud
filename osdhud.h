@@ -45,6 +45,9 @@
 #include <time.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <sys/un.h>
 
 #ifdef __FreeBSD__
 # define HAVE_SETPROCTITLE 1
@@ -55,29 +58,17 @@
 # include <tzfile.h>
 #endif
 
-#include <sys/socket.h>
-#include <net/if.h>
-#include <sys/un.h>
-
 #include <xosd.h>
 #include <Judy.h>
 
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
 
-#if __amd64__                           /* XXX WRONG! */
-# define SIZEOF_F "%ld"
-#else
-# define SIZEOF_F "%d"
-#endif
+#define SIZEOF_F "%lu"
 #define SIZE_T_F SIZEOF_F
 
 #define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))
 #define NULLS(_x_) ((_x_) ? (_x_) : "NULL")
-
-/* Compile-time options that are really only for development */
-/*#define CREATE_EACH_TIME 1*/
-#define USE_TWO_OSDS 1/**/
 
 /*
  * A moving average c.f. movavg_* in osdhud.c
@@ -90,8 +81,8 @@ struct movavg {
     float              *window;
 };
 
-# define MAX_WSIZE 10000 /* max size of moving average window */
-# define MAX_ALERTS_SIZE 1024
+#define MAX_WSIZE 10000 /* max size of moving average window */
+#define MAX_ALERTS_SIZE 1024
 
 /*
  * Application state
@@ -155,6 +146,14 @@ typedef struct osdhud_state {
     float               net_opxps;
     float               net_peak_kbps;
     float               net_peak_pxps;
+    struct movavg      *rxdisk_ma;
+    float               disk_rkbps;
+    struct movavg      *wxdisk_ma;
+    float               disk_wkbps;
+    struct movavg      *rbdisk_ma;
+    float               disk_rxps;
+    struct movavg      *wbdisk_ma;
+    float               disk_wxps;
     float               mem_used_percent;
     float               swap_used_percent;
     int                 battery_missing:1;
@@ -169,9 +168,7 @@ typedef struct osdhud_state {
     char                message[MAX_ALERTS_SIZE];
     xosd               *osd;
     int                 disp_line;
-#ifdef USE_TWO_OSDS
     xosd               *osd2;
-#endif
     char                errbuf[1024];
 } osdhud_state_t;
 
@@ -270,7 +267,11 @@ typedef struct osdhud_state {
 #define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
 #define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
 
-/* shared across operating systems */
+/*
+ * Per-OS modules call in to these functions to report their
+ * statistics for network and disk
+ */
+
 void update_net_statistics(
     osdhud_state_t     *state,
     unsigned long       delta_ibytes,
@@ -278,8 +279,16 @@ void update_net_statistics(
     unsigned long       delta_ipax,
     unsigned long       delta_opax);
 
+void update_disk_statistics(
+    osdhud_state_t     *state,
+    unsigned long long  delta_rbytes,
+    unsigned long long  delta_wbytes,
+    unsigned long long  delta_reads,
+    unsigned long long  delta_writes);
+
 /*
- * probe_xxx() function prototypes
+ * probe_xxx() function prototypes; each os-specific module
+ * implements these, e.g. openbsd.c, freebsd.c.
  */
 
 void probe_init(

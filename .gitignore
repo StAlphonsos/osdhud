@@ -1,4 +1,8 @@
 osdhud
 *.o
 *~
+*.[0-9]
 version.h
+config.h
+config.mk
+Makefile

@@ -343,8 +343,8 @@ static void display_net(
 {
     char *iface = state->net_iface? state->net_iface: "-";
     int left, off, n;
-    char label[128] = { 0 };
-    char details[128] = { 0 };
+    char label[256];
+    char details[1024];
     float net_kbps = state->net_ikbps + state->net_okbps;
     float net_pxps = state->net_ipxps + state->net_opxps;
     char unit = 'k';
@@ -352,6 +352,8 @@ static void display_net(
     float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
     int percent = max_kbps ? (int)(100 * (net_kbps / max_kbps)) : 0;
 
+    memset(label,0,sizeof(label));
+    memset(details,0,sizeof(details));
     /*
      * If there are gigabytes or megabytes flying by then
      * switch to the appropriate unit.
@@ -377,7 +379,15 @@ static void display_net(
         left = sizeof(details);
         off = 0;
         if (max_kbps && percent) {
-            n = snprintf(&details[off],left,"%3d%% ",percent);
+            if (percent <= 100)
+                n = snprintf(&details[off],left,"%3d%% ",percent);
+            else
+                /*
+                 * This must be because max_kbps is wrong, which
+                 * can happen if my guess is wrong or if the user
+                 * gives us a value for -X that is wrong.
+                 */
+                n = snprintf(&details[off],left,"> 100%%(!) ");
             assert(n < left);
             left -= n;
             off += n;
@@ -396,8 +406,11 @@ static void display_net(
     xosd_display(
         state->osd,state->disp_line++,XOSD_printf,"%s %s",label,details
     );
-    if (max_kbps)
+    if (max_kbps) {
+        /* xosd_display() should check this but I dunno... */
+        percent = (percent > 100) ? 100 : percent;
         xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+    }
 }
 
 static void display_disk(

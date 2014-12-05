@@ -7,6 +7,7 @@ PACKAGE_NAME!=cat PACKAGE
 DIST_VERS!=cat VERSION
 S!=pwd
 
+.include "$(S)/config.mk"
 .include "$(S)/bsd/settings.mk"
 .include "$(S)/bsd/commands.mk"
 .include "$(S)/_makefile"

@@ -45,6 +45,9 @@
 #include <time.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <sys/un.h>
 
 #ifdef __FreeBSD__
 # define HAVE_SETPROCTITLE 1
@@ -54,10 +57,6 @@
 # define HAVE_SETPROCTITLE 1
 # include <tzfile.h>
 #endif
-
-#include <sys/socket.h>
-#include <net/if.h>
-#include <sys/un.h>
 
 #include <xosd.h>
 #include <Judy.h>
@@ -82,8 +81,8 @@ struct movavg {
     float              *window;
 };
 
-# define MAX_WSIZE 10000 /* max size of moving average window */
-# define MAX_ALERTS_SIZE 1024
+#define MAX_WSIZE 10000 /* max size of moving average window */
+#define MAX_ALERTS_SIZE 1024
 
 /*
  * Application state
@@ -242,13 +241,16 @@ typedef struct osdhud_state {
     }
 
 /*
- * Shorthands for common idioms
+ * Shorthands for common idioms.  The _z versions take the size as an
+ * argument, the non _z versions use sizeof(xx)
  */
 
-#define assert_strlcpy(xx,yy)                                           \
-    assert(strlcpy(xx,yy,sizeof(xx)) < sizeof(xx))
-#define assert_strlcat(xx,yy)                                           \
-    assert(strlcat(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_strlcpy_z(xx,yy,zz) assert(strlcpy(xx,yy,zz) < zz)
+#define assert_strlcpy(xx,yy) assert_strlcpy_z(xx,yy,sizeof(xx))
+#define assert_strlcat_z(xx,yy,zz) assert(strlcat(xx,yy,zz) < zz)
+#define assert_strlcat(xx,yy) assert_strlcat_z(xx,yy,sizeof(xx))
+#define assert_snprintf_z(xx,zz,ff,...)                                 \
+    assert(snprintf(xx,zz,ff,##__VA_ARGS__) < zz)
 #define assert_snprintf(xx,ff,...)                                      \
     assert(snprintf(xx,sizeof(xx),ff,##__VA_ARGS__) < sizeof(xx))
 #define assert_elapsed(xx,ss)                                           \

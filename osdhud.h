@@ -241,13 +241,16 @@ typedef struct osdhud_state {
     }
 
 /*
- * Shorthands for common idioms
+ * Shorthands for common idioms.  The _z versions take the size as an
+ * argument, the non _z versions use sizeof(xx)
  */
 
-#define assert_strlcpy(xx,yy)                                           \
-    assert(strlcpy(xx,yy,sizeof(xx)) < sizeof(xx))
-#define assert_strlcat(xx,yy)                                           \
-    assert(strlcat(xx,yy,sizeof(xx)) < sizeof(xx))
+#define assert_strlcpy_z(xx,yy,zz) assert(strlcpy(xx,yy,zz) < zz)
+#define assert_strlcpy(xx,yy) assert_strlcpy_z(xx,yy,sizeof(xx))
+#define assert_strlcat_z(xx,yy,zz) assert(strlcat(xx,yy,zz) < zz)
+#define assert_strlcat(xx,yy) assert_strlcat_z(xx,yy,sizeof(xx))
+#define assert_snprintf_z(xx,zz,ff,...)                                 \
+    assert(snprintf(xx,zz,ff,##__VA_ARGS__) < zz)
 #define assert_snprintf(xx,ff,...)                                      \
     assert(snprintf(xx,sizeof(xx),ff,##__VA_ARGS__) < sizeof(xx))
 #define assert_elapsed(xx,ss)                                           \

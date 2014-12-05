@@ -320,7 +320,7 @@ void probe_mem(
     size = sizeof(vmtotal);
     if (sysctl(vmtotal_mib,ARRAY_SIZE(vmtotal_mib),&vmtotal,&size,NULL,0)<0) {
         SPEWE("sysctl");
-        bzero(&vmtotal,sizeof(vmtotal));
+        memset(&vmtotal,0,sizeof(vmtotal));
     }
     tot_kbytes = (float)pagetok(vmtotal.t_rm);
     act_kbytes = (float)pagetok(vmtotal.t_arm);
@@ -391,7 +391,7 @@ void probe_net(
     /* lim points past the end */
     lim = buf + need;
     for (next = buf; next < lim; next += ifm.ifm_msglen) {
-        bcopy(next,&ifm,sizeof(ifm));
+        memcpy(&ifm,next,sizeof(ifm));
         /* We might get back all kinds of things; filter for just the
          * ones we want to examine.
          */
@@ -407,11 +407,11 @@ void probe_net(
             assert(newstats);
             ifstats = newstats;
             for (; nifs < ifm.ifm_index + 4; nifs++)
-                bzero(&ifstats[nifs], sizeof(*ifstats));
+                memset(&ifstats[nifs],0,sizeof(*ifstats));
         }
         ifs = &ifstats[ifm.ifm_index];
         if (ifs->ifs_name[0] == '\0') { /* index not seen yet */
-            bzero(&info,sizeof(info));
+            memset(&info,0,sizeof(info));
             /* this gets a bunch of metadata, only one bit of which we want */
             rt_getaddrinfo(
                 (struct sockaddr *)((struct if_msghdr *)next + 1),
@@ -424,11 +424,11 @@ void probe_net(
                 struct ifgroupreq groups;
 
                 /* Use ioctls to query interface media and group(s) */
-                bcopy(sdl->sdl_data,ifs->ifs_name,sdl->sdl_nlen);
+                memcpy(ifs->ifs_name,sdl->sdl_data,sdl->sdl_nlen);
                 ifs->ifs_name[sdl->sdl_nlen] = '\0';
-                bzero(&media,sizeof(media));
+                memset(&media,0,sizeof(media));
                 assert_strlcpy(media.ifm_name,ifs->ifs_name);
-                bzero(&groups,sizeof(groups));
+                memset(&groups,0,sizeof(groups));
                 assert_strlcpy(groups.ifgr_name,ifs->ifs_name);
                 s = socket(AF_INET, SOCK_DGRAM, 0);
                 assert(s >= 0);

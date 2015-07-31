@@ -55,11 +55,14 @@
 
 #ifdef __OpenBSD__
 # define HAVE_SETPROCTITLE 1
-# include <tzfile.h>
 #endif
 
 #include <xosd.h>
 #include <Judy.h>
+
+#define SECSPERMIN      60
+#define SECSPERHOUR     (SECSPERMIN*60)
+#define SECSPERDAY      (SECSPERHOUR*24)
 
 #include "version.h"
 #define PURPOSE "minmalist heads-up display"
@@ -175,8 +178,8 @@ typedef struct osdhud_state {
 #define KILO 1024
 #define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
-
-#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
+#define DEFAULT_FONT "-xos4-terminus-medium-r-normal--32-320-72-72-c-160-iso8859-1"
+/*#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"*/
 #define DEFAULT_POS_X 10
 #define DEFAULT_POS_Y 48
 #define DEFAULT_NLINES 15

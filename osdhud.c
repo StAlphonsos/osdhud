@@ -16,9 +16,9 @@
 
 /* ISC LICENSE:
  *
- * Copyright (C) 2014 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014,2015 by attila <attila@stalphonsos.com>
  *
- * Permission to use, copy, modify, and/or distribute this software for
+ * Permission to use, copy, modify, and distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
  * copies.

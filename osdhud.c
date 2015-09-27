@@ -380,9 +380,11 @@ display_net(osdhud_state_t *state)
 	float net_pxps = state->net_ipxps + state->net_opxps;
 	char unit = 'k';
 	float unit_div = 1.0;
-	float max_kbps = (state->net_speed_mbits / 8.0) * KILO;
+	float max_kbps = ((float)state->net_speed_mbits / 8.0) * KILO;
 	int percent = max_kbps ? (int)(100 * (net_kbps / max_kbps)) : 0;
 
+	VSPEW("display_net %s net_speed_mbits %d max_kbps %f",
+	      iface,state->net_speed_mbits,max_kbps);
 	memset(label,0,sizeof(label));
 	memset(details,0,sizeof(details));
 	/*
@@ -566,19 +568,19 @@ display(osdhud_state_t *state)
 #define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:knDUSNFCwhgaAt?"
 #define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface]\n\
-       -v verbose      | -k kill server | -F run in foreground\n\
-       -D down hud     | -U up hud      | -S stick hud | -N unstick hud\n\
-       -g debug mode   | -t toggle mode | -w don't show swap\n\
-       -n don't display at startup    | -C display hud countdown\n\
-                        -h,-? display this\n\
-       -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
-       -d msec  leave hud visible for millis (def: 2000)\n\
-       -p msec  millis between sampling when hud is up (def: 100)\n\
-       -P msec  millis between sampling when hud is down (def: 100)\n\
-       -f font  font (def: "DEFAULT_FONT")\n\
-       -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
-       -i iface network interface to watch\n\
-       -X mb/s  fix max net link speed in mbit/sec (def: query interface)\n"
+   -v verbose      | -k kill server | -F run in foreground\n\
+   -D down HUD     | -U up HUD      | -S stick HUD | -N unstick HUD\n\
+   -g debug mode   | -t toggle mode | -w don't show swap\n\
+   -n don't show HUD on startup     | -C display HUD countdown\n\
+   -h,-? display this\n\
+   -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
+   -d msec  leave HUD visible for millis (def: 2000)\n\
+   -p msec  millis between sampling when HUD is up (def: 100)\n\
+   -P msec  millis between sampling when HUD is down (def: 100)\n\
+   -f font  (def: "DEFAULT_FONT")\n\
+   -s path  path to Unix-domain socket (def: ~/.%s_%s.sock)\n\
+   -i iface network interface to watch\n\
+   -X mb/s  fix max net link speed in mbit/sec (def: query interface)\n"
 
 int
 usage(osdhud_state_t *state, char *msg)

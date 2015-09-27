@@ -574,8 +574,11 @@ probe_net(osdhud_state_t *state)
 			unsigned long delta_in_p = delta_x(ipackets);
 			unsigned long delta_out_p = delta_x(opackets);
 #undef delta_x
-			if (!state->net_speed_mbits)
+			if (!state->net_speed_mbits) {
+				VSPEW("%s net_speed_mbits = %d",
+				      ifs->ifs_name,ifs->ifs_speed);
 				state->net_speed_mbits = ifs->ifs_speed;
+			}
 			tot_delta_in_b += delta_in_b;
 			tot_delta_out_b += delta_out_b;
 			tot_delta_in_p += delta_in_p;

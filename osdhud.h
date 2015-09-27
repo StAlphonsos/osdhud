@@ -16,8 +16,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef osdhud_h_mi_protect_
-# define osdhud_h_mi_protect_
+/* Data structures and macros for osdhud */
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__)
 # define HAVE_SETPROCTITLE 1
@@ -263,8 +262,6 @@ void probe_net(osdhud_state_t *state);
 void probe_disk(osdhud_state_t *state);
 void probe_battery(osdhud_state_t *state);
 void probe_uptime(osdhud_state_t *state);
-
-#endif /* osdhud_h_mi_protect_ */
 
 /*
  * Local variables:

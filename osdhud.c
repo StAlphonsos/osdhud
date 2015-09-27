@@ -55,8 +55,6 @@
 #include "osdhud.h"
 #include "version.h"
 
-#define PURPOSE "minmalist heads-up display"
-
 int interrupted = 0;                    /* got a SIGINT */
 int restart_req = 0;                    /* got a SIGHUP */
 #ifdef SIGINFO
@@ -468,7 +466,7 @@ display_battery(osdhud_state_t *state)
 	xosd_display(state->osd,state->disp_line++,XOSD_printf,
 		"battery: %s, %d%% charged (%s)",charging,
 		     state->battery_life,mins);
-	xosd_display(tate->osd,state->disp_line++,XOSD_percentage,
+	xosd_display(state->osd,state->disp_line++,XOSD_percentage,
 		     state->battery_life);
 }
 
@@ -594,8 +592,8 @@ usage(osdhud_state_t *state, char *msg)
 		if (msg)
 			fprintf(stderr,"%s ERROR: %s\n",state->argv0,msg);
 		else {
-			fprintf(stderr,"%s v%s: %s\n",state->argv0,
-				VERSION,PURPOSE);
+			fprintf(stderr,"%s %s: heads-up system status display\n",
+				state->argv0,VERSION);
 			fprintf(stderr,USAGE_MSG,state->argv0,
 				state->argv0,VERSION);
 		}
@@ -1026,7 +1024,7 @@ handle_message(osdhud_state_t *state)
 				do {					\
 					if (state->verbose)		\
 						syslog(LOG_WARNING,	\
-						       nn" "ff" => "ff,	\
+						       #nn" "ff" => "ff, \
 						       state->nn,foo->nn); \
 					state->nn = foo->nn;		\
 				} while(0)
@@ -1034,7 +1032,7 @@ handle_message(osdhud_state_t *state)
 				do {					\
 					if (state->verbose)		\
 						syslog(LOG_WARNING,	\
-						       nn" %s => %s",	\
+						       #nn" %s => %s",	\
 						       NULLS(state->nn),\
 						       NULLS(foo->nn));	\
 					free(state->nn);		\
@@ -1055,7 +1053,7 @@ handle_message(osdhud_state_t *state)
 				do {					\
 					if (is_different(nn)) {		\
 						setstrparam(nn);	\
-						cc();			\
+						cc;			\
 					}				\
 				} while (0)
 				
@@ -1074,7 +1072,8 @@ handle_message(osdhud_state_t *state)
 				setparam(long_pause_msecs,"%d");
 				maybe_setstrparam(font);
 				maybe_setstrparam(time_fmt);
-				maybe_setstrparam2(net_iface,clear_net_info);
+				maybe_setstrparam2(net_iface,
+						   clear_net_info(state));
 
 #undef maybe_setstrparam2
 #undef maybe_setstrparam
@@ -1102,6 +1101,7 @@ handle_message(osdhud_state_t *state)
 					state->net_speed_mbits = 
 						foo->net_speed_mbits;
 			}
+		DONE:
 			free_state(foo);
 			free_split(argc,argv);
 		}

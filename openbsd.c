@@ -98,6 +98,8 @@
 #include <sys/swap.h>
 #include <machine/apmvar.h>
 #include <sys/disk.h>
+#include <xosd.h>
+#include <Judy.h>
 #include "osdhud.h"
 
 #define APM_DEV "/dev/apm"
@@ -360,8 +362,8 @@ probe_swap(osdhud_state_t *state)
 	state->swap_used_percent = (float)used / (float)xsize;
 }
 
-static int
-get_speed(sock,char *name)
+int
+get_speed(int sock,char *name,osdhud_state_t *state)
 {
 	struct ifmediareq media;
 	int act, mbit_sec, i;
@@ -380,8 +382,8 @@ get_speed(sock,char *name)
 	if (i == ARRAY_SIZE(media_speeds))
 		/* Last entry is default */
 		mbit_sec = media_speeds[i-1].mbit_sec;
-	VSPEW("iface %s media cur 0x%x mask 0x%lx status 0x%lx "
-	      "active 0x%lx count=%d: %d mbit/sec",name,media.ifm_current,
+	VSPEW("iface %s media cur 0x%llx mask 0x%llx status 0x%llx "
+	      "active 0x%llx count=%d: %d mbit/sec",name,media.ifm_current,
 	      media.ifm_mask,media.ifm_status,media.ifm_active,
 	      media.ifm_count,mbit_sec);
 DONE:
@@ -389,8 +391,10 @@ DONE:
 }
 
 static void
-suss_groups(int sock,char *name,struct openbsd_data *os_data)
+suss_groups(int sock,char *name,osdhud_state_t *state)
 {
+	struct openbsd_data *os_data =
+		(struct openbsd_data *)state->per_os_data;
 	struct ifgroupreq groups;
 	int ngroups, i;
 
@@ -436,6 +440,7 @@ DONE:
 }
 
 void
+
 probe_net(osdhud_state_t *state)
 {
 	char *buf, *next, *lim;
@@ -519,8 +524,9 @@ probe_net(osdhud_state_t *state)
 				ifs->ifs_name[sdl->sdl_nlen] = '\0';
 				s = socket(AF_INET, SOCK_DGRAM, 0);
 				assert(s >= 0);
-				ifs->ifs_speed = get_speed(s,ifs->ifs_name);
-				suss_groups(s,ifs->ifs_name,os_data);
+				ifs->ifs_speed =
+					get_speed(s,ifs->ifs_name,state);
+				suss_groups(s,ifs->ifs_name,state);
 				close(s);
 			}
 			if (ifs->ifs_name[0] == '\0') /* was not interesting */
@@ -646,7 +652,6 @@ probe_disk(osdhud_state_t *state)
 		obsd->drive_names = calloc(obsd->ndrive,sizeof(char *));
 	VSPEW("found %d disks",obsd->ndrive);
 	{
-#define dd(nn) d->ds_##nn
 		int i;
 		char *bufpp = obsd->drive_names_raw;
 		char *name;
@@ -662,7 +667,11 @@ probe_disk(osdhud_state_t *state)
 				*name = '\0';
 			/* Jump to next name */
 			name = strsep(&bufpp,",");
-			VSPEW("disk#%d: %s rxfer=%llu wxfer=%llu seek=%llu rbytes=%llu wbyes=%llu",i,obsd->drive_names[i],dd(rxfer),dd(wxfer),dd(seek),dd(rbytes),dd(wbytes));
+#define dd(nn) d->ds_##nn
+			VSPEW("disk#%d: %s rxfer=%llu wxfer=%llu seek=%llu"
+			      " rbytes=%llu wbyes=%llu",i,obsd->drive_names[i],
+			      dd(rxfer),dd(wxfer),dd(seek),dd(rbytes),
+			      dd(wbytes));
 #undef dd
 		}
 	}

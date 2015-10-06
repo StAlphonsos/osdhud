@@ -100,6 +100,7 @@
 #include <sys/disk.h>
 #include <xosd.h>
 #include <Judy.h>
+#include "movavg.h"
 #include "osdhud.h"
 
 #define APM_DEV "/dev/apm"
@@ -229,7 +230,7 @@ rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)
 }
 
 void
-probe_init(osdhud_state_t *state)
+probe_init(struct osdhud_state *state)
 {
 	int mib[2] = { CTL_KERN, KERN_BOOTTIME };
 	int pagesize;
@@ -281,7 +282,7 @@ probe_init(osdhud_state_t *state)
 }
 
 void
-probe_cleanup(osdhud_state_t *state)
+probe_cleanup(struct osdhud_state *state)
 {
 	if (state->per_os_data) {
 		struct openbsd_data *obsd =
@@ -313,7 +314,7 @@ probe_cleanup(osdhud_state_t *state)
 }
 
 void
-probe_load(osdhud_state_t *state)
+probe_load(struct osdhud_state *state)
 {
 	double avgs[1] = { 0.0 };
 
@@ -325,7 +326,7 @@ probe_load(osdhud_state_t *state)
 }
 
 void
-probe_mem(osdhud_state_t *state)
+probe_mem(struct osdhud_state *state)
 {
 	static int vmtotal_mib[] = {CTL_VM, VM_METER};
 	struct vmtotal vmtotal;
@@ -343,7 +344,7 @@ probe_mem(osdhud_state_t *state)
 }
 
 void
-probe_swap(osdhud_state_t *state)
+probe_swap(struct osdhud_state *state)
 {
 	struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
 	int i, used, xsize;
@@ -363,7 +364,7 @@ probe_swap(osdhud_state_t *state)
 }
 
 int
-get_speed(int sock,char *name,osdhud_state_t *state)
+get_speed(int sock,char *name,struct osdhud_state *state)
 {
 	struct ifmediareq media;
 	int act, mbit_sec, i;
@@ -391,7 +392,7 @@ DONE:
 }
 
 static void
-suss_groups(int sock,char *name,osdhud_state_t *state)
+suss_groups(int sock,char *name,struct osdhud_state *state)
 {
 	struct openbsd_data *os_data =
 		(struct openbsd_data *)state->per_os_data;
@@ -441,7 +442,7 @@ DONE:
 
 void
 
-probe_net(osdhud_state_t *state)
+probe_net(struct osdhud_state *state)
 {
 	char *buf, *next, *lim;
 	size_t need;
@@ -608,7 +609,7 @@ probe_net(osdhud_state_t *state)
 /* Many clues taken from /usr/src/usr.bin/vmstat/dkstats.c */
 /* XXX incomplete */
 void
-probe_disk(osdhud_state_t *state)
+probe_disk(struct osdhud_state *state)
 {
 	struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
 	int ndrive = 0;
@@ -682,7 +683,7 @@ probe_disk(osdhud_state_t *state)
 
 /* c.f. apm(4) */
 void
-probe_battery(osdhud_state_t *state)
+probe_battery(struct osdhud_state *state)
 {
 	int apm;
 	struct apm_power_info info;
@@ -750,7 +751,12 @@ probe_battery(osdhud_state_t *state)
 }
 
 void
-probe_uptime(osdhud_state_t *state)
+probe_temperature(struct osdhud_state *state)
+{
+}
+
+void
+probe_uptime(struct osdhud_state *state)
 {
 	time_t now;
 	struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;

@@ -31,108 +31,99 @@
 
 #define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))
 #define NULLS(_x_) ((_x_) ? (_x_) : "NULL")
-
-/*
- * A moving average c.f. movavg_* in osdhud.c
- */
-struct movavg {
-	int                 window_size;
-	int                 off;
-	int                 count;
-	float               sum;
-	float              *window;
-};
-
-#define MAX_WSIZE 10000 /* max size of moving average window */
 #define MAX_ALERTS_SIZE 1024
+
+#define NLINES 16
 
 /*
  * Application state
  */
-typedef struct osdhud_state {
-	int                 kill_server:1;
-	int                 down_hud:1;
-	int                 up_hud:1;
-	int                 stick_hud:1;
-	int                 unstick_hud:1;
-	int                 foreground:1;
-	int                 hud_is_up:1;
-	int                 server_quit:1;
-	int                 stuck:1;
-	int                 debug:1;
-	int                 countdown:1;
-	int                 quiet_at_start:1;
-	int                 toggle_mode:1;
-	int                 alerts_mode:1;
-	int                 cancel_alerts:1;
-	char               *argv0;
-	int                 pid;
-	char               *sock_path;
-	struct sockaddr_un  addr;
-	int                 sock_fd;
-	char               *font;
-	char               *net_iface;
-	int                 net_speed_mbits;
-	char               *time_fmt;
-	int                 nswap;
-	int                 min_battery_life;
-	float               max_load_avg;
-	float               max_mem_used;
-	unsigned long       net_tot_ipackets;
-	unsigned long       net_tot_ierr;
-	unsigned long       net_tot_opackets;
-	unsigned long       net_tot_oerr;
-	unsigned long       net_tot_ibytes;
-	unsigned long       net_tot_obytes;
-	int                 delta_t;
-	int                 pos_x;
-	int                 pos_y;
-	int                 nlines;
-	int                 width;
-	int                 display_msecs;
-	int                 duration_msecs;
-	int                 t0_msecs;
-	int                 short_pause_msecs;
-	int                 long_pause_msecs;
-	int                 net_movavg_wsize;
-	int                 verbose;
-	float               load_avg;
-	void               *per_os_data;
-	struct movavg      *ikbps_ma;
-	float               net_ikbps;
-	struct movavg      *okbps_ma;
-	float               net_okbps;
-	struct movavg      *ipxps_ma;
-	float               net_ipxps;
-	struct movavg      *opxps_ma;
-	float               net_opxps;
-	float               net_peak_kbps;
-	float               net_peak_pxps;
-	struct movavg      *rxdisk_ma;
-	float               disk_rkbps;
-	struct movavg      *wxdisk_ma;
-	float               disk_wkbps;
-	struct movavg      *rbdisk_ma;
-	float               disk_rxps;
-	struct movavg      *wbdisk_ma;
-	float               disk_wxps;
-	float               mem_used_percent;
-	float               swap_used_percent;
-	int                 battery_missing:1;
-	int                 battery_life;
-	char                battery_state[32];
-	int                 battery_time;
-	unsigned long       uptime_secs;
-	unsigned long       last_t;
-	unsigned long       first_t;
-	unsigned long       sys_uptime;
-	int                 message_seen:1;
-	char                message[MAX_ALERTS_SIZE];
-	xosd               *osd;
-	int                 disp_line;
-	xosd               *osd2;
-	char                errbuf[1024];
-} osdhud_state_t;
+struct osdhud_state {
+	int		 kill_server:1;
+	int		 down_hud:1;
+	int		 up_hud:1;
+	int		 stick_hud:1;
+	int		 unstick_hud:1;
+	int		 foreground:1;
+	int		 hud_is_up:1;
+	int		 server_quit:1;
+	int		 stuck:1;
+	int		 debug:1;
+	int		 countdown:1;
+	int		 quiet_at_start:1;
+	int		 toggle_mode:1;
+	int		 alerts_mode:1;
+	int		 cancel_alerts:1;
+	char		*argv0;
+	char		 hostname[128];
+	int		 pid;
+	char		*sock_path;
+	struct		 sockaddr_un addr;
+	int		 sock_fd;
+	char		*font;
+	char		*net_iface;
+	int		 net_speed_mbits;
+	char		*time_fmt;
+	int		 nswap;
+	int		 min_battery_life;
+	float		 max_load_avg;
+	float		 max_mem_used;
+	u_int64_t	 net_tot_ipackets;
+	u_int64_t	 net_tot_ierr;
+	u_int64_t	 net_tot_opackets;
+	u_int64_t	 net_tot_oerr;
+	u_int64_t	 net_tot_ibytes;
+	u_int64_t	 net_tot_obytes;
+	int		 delta_t;
+	int		 pos_x;
+	int		 pos_y;
+	int		 nlines;
+	int		 line_height;
+	int		 width;
+	int		 display_msecs;
+	int		 duration_msecs;
+	int		 t0_msecs;
+	int		 short_pause_msecs;
+	int		 long_pause_msecs;
+	int		 net_movavg_wsize;
+	int		 verbose;
+	float		 load_avg;
+	void		*per_os_data;
+	struct		 movavg *ikbps_ma;
+	float		 net_ikbps;
+	struct		 movavg *okbps_ma;
+	float		 net_okbps;
+	struct		 movavg *ipxps_ma;
+	float		 net_ipxps;
+	struct		 movavg *opxps_ma;
+	float		 net_opxps;
+	float		 net_peak_kbps;
+	float		 net_peak_pxps;
+	struct		 movavg *rxdisk_ma;
+	float		 disk_rkbps;
+	struct		 movavg *wxdisk_ma;
+	float		 disk_wkbps;
+	struct		 movavg *rbdisk_ma;
+	float		 disk_rxps;
+	struct		 movavg *wbdisk_ma;
+	float		 disk_wxps;
+	float		 mem_used_percent;
+	float		 swap_used_percent;
+	int		 battery_missing:1;
+	int		 battery_life;
+	char		 battery_state[32];
+	int		 battery_time;
+	time_t		 uptime_secs;
+        time_t		 last_t;
+	time_t		 first_t;
+	time_t		 sys_uptime;
+	int		 message_seen:1;
+	char		 message[MAX_ALERTS_SIZE];
+	xosd		*osds[NLINES];
+	int		 disp_line;
+	xosd	        *osd_bot;
+	char		 errbuf[1024];
+};
 
 #define KILO 1024
 #define MEGA (KILO*KILO)
@@ -141,10 +132,10 @@ typedef struct osdhud_state {
 /*#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"*/
 #define DEFAULT_POS_X 10
 #define DEFAULT_POS_Y 48
-#define DEFAULT_NLINES 15
+#define DEFAULT_LINE_HEIGHT 36
 #define DEFAULT_WIDTH 50
-#define DEFAULT_DISPLAY 4000
-#define DEFAULT_SHORT_PAUSE 100
+#define DEFAULT_DISPLAY 2000
+#define DEFAULT_SHORT_PAUSE 80
 /*#define DEFAULT_LONG_PAUSE 1800*/
 #define DEFAULT_LONG_PAUSE DEFAULT_SHORT_PAUSE
 #define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
@@ -207,10 +198,10 @@ typedef struct osdhud_state {
  * argument, the non _z versions use sizeof(xx)
  */
 
-#define assert_strlcpy_z(xx,yy,zz) assert(strlcpy(xx,yy,zz) < zz)
-#define assert_strlcpy(xx,yy) assert_strlcpy_z(xx,yy,sizeof(xx))
-#define assert_strlcat_z(xx,yy,zz) assert(strlcat(xx,yy,zz) < zz)
-#define assert_strlcat(xx,yy) assert_strlcat_z(xx,yy,sizeof(xx))
+#define assert_strlcpy_z(xx,yy,zz)	assert(strlcpy(xx,yy,zz) < zz)
+#define assert_strlcpy(xx,yy)		assert_strlcpy_z(xx,yy,sizeof(xx))
+#define assert_strlcat_z(xx,yy,zz)	assert(strlcat(xx,yy,zz) < zz)
+#define assert_strlcat(xx,yy)		assert_strlcat_z(xx,yy,sizeof(xx))
 #define assert_snprintf_z(xx,zz,ff,...)                                 \
     assert(snprintf(xx,zz,ff,##__VA_ARGS__) < zz)
 #define assert_snprintf(xx,ff,...)                                      \
@@ -237,31 +228,29 @@ typedef struct osdhud_state {
  * statistics for network and disk
  */
 
-void
-update_net_statistics(osdhud_state_t *state, unsigned long delta_ibytes,
-		      unsigned long delta_obytes, unsigned long delta_ipackets,
-		      unsigned long delta_opackets);
+void update_net_statistics(struct osdhud_state *state, u_int64_t delta_ibytes,
+			   u_int64_t delta_obytes, u_int64_t delta_ipackets,
+			   u_int64_t delta_opackets);
 
-void
-update_disk_statistics(osdhud_state_t *state, unsigned long long delta_rbytes,
-		       unsigned long long delta_wbytes,
-		       unsigned long long delta_reads,
-		       unsigned long long delta_writes);
+void update_disk_statistics(struct osdhud_state *state, u_int64_t delta_rbytes,
+			    u_int64_t delta_wbytes, u_int64_t delta_reads,
+			    u_int64_t delta_writes);
 
 /*
  * probe_xxx() function prototypes; each os-specific module
  * implements these, e.g. openbsd.c, freebsd.c.
  */
 
-void probe_init(osdhud_state_t *state);
-void probe_cleanup(osdhud_state_t *state);
-void probe_load(osdhud_state_t *state);
-void probe_mem(osdhud_state_t *state);
-void probe_swap(osdhud_state_t *state);
-void probe_net(osdhud_state_t *state);
-void probe_disk(osdhud_state_t *state);
-void probe_battery(osdhud_state_t *state);
-void probe_uptime(osdhud_state_t *state);
+void probe_init(struct osdhud_state *);
+void probe_cleanup(struct osdhud_state *);
+void probe_load(struct osdhud_state *);
+void probe_mem(struct osdhud_state *);
+void probe_swap(struct osdhud_state *);
+void probe_net(struct osdhud_state *);
+void probe_disk(struct osdhud_state *);
+void probe_battery(struct osdhud_state *);
+void probe_temperature(struct osdhud_state *);
+void probe_uptime(struct osdhud_state *);
 
 /*
  * Local variables:

@@ -17,16 +17,7 @@
  */
 
 /*
- * osdhud - xosd-based heads up display
- *
- * This command should be bound to some key in your window manager.
- * When invoked it brings up a heads-up display overlaid on the screen
- * via libosd.  It stays up for some configurable duration during
- * which it updates in real time, then disappears.  The default is for
- * the display to stay up for 2 seconds and update every 100
- * milliseconds.  The display includes load average, memory
- * utilization, swap utilization, network utilization, battery
- * lifetime and uptime.
+ * osdhud - xosd-based heads up system status display
  */
 
 #include <assert.h>
@@ -42,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <syslog.h>
+#include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <time.h>
@@ -52,93 +44,26 @@
 #include <sys/un.h>
 #include <xosd.h>
 #include <Judy.h>
-#include "osdhud.h"
+#include <err.h>
+#include "config.h"
 #include "version.h"
+#include "movavg.h"
+#include "osdhud.h"
 
-int interrupted = 0;                    /* got a SIGINT */
-int restart_req = 0;                    /* got a SIGHUP */
+volatile sig_atomic_t interrupted = 0;	/* got a SIGINT */
+volatile sig_atomic_t restart_req = 0;	/* got a SIGHUP */
 #ifdef SIGINFO
-int bang_bang = 0;                      /* got a SIGINFO */
+volatile sig_atomic_t bang_bang = 0;	/* got a SIGINFO */
 #endif
 
 #define WHITESPACE " \t\n\r"
-#define ipercent(v) ((int)(100 * (v)))
+
+#define safe_percent(a,b) b? a/b: 0;	/* don't divide by zero */
+#define ipercent(v) (int)(100 * (v))	/* 0.05 -> 5 */
 /*#define ENABLE_ALERTS 1*/
-
-/*
- * Maintain moving averages.
- */
-
-struct movavg *
-movavg_new(int wsize)
-{
-	struct movavg *ma;
-
-	assert((wsize > 1) || (wsize <= MAX_WSIZE));
-	ma = malloc(sizeof(*ma));
-	assert(ma);
-	ma->window_size = wsize;
-	ma->off = ma->count = 0;
-	ma->sum = 0;
-	ma->window = (float *)calloc(wsize,sizeof(float));
-	assert(ma->window);
-	return ma;
-}
-
-void
-movavg_free(struct movavg *ma)
-{
-	if (ma) {
-		free(ma->window);
-		free(ma);
-	}
-}
-
-void
-movavg_clear(struct movavg *ma)
-{
-	if (ma) {
-		int i;
-
-		for (i = 0; i < ma->window_size; i++)
-			ma->window[i] = 0;
-		ma->off = ma->count = 0;
-		ma->sum = 0;
-	}
-}
-
-float
-movavg_add(struct movavg *ma, float val)
-{
-	float result = 0;
-
-	if (ma) {
-		if (ma->count < ma->window_size)
-			ma->count++;
-		else {
-			ma->off %= ma->window_size;
-			ma->sum -= ma->window[ma->off]; /* the "moving" part */
-		}
-		ma->sum += val;
-		ma->window[ma->off++] = val;
-		assert(ma->count);
-		result = ma->sum / ma->count;
-	}
-	return result;
-}
-
-float
-movavg_val(struct movavg *ma)
-{
-	return (ma && ma->count) ? (ma->sum / ma->count) : 0;
-}
-
-/*
- * Utilities
- */
     
 char *
-err_str(osdhud_state_t *state, int err)
+err_str(struct osdhud_state *state, int err)
 {
 	state->errbuf[0] = 0;
 	(void) strerror_r(err,state->errbuf,sizeof(state->errbuf));
@@ -146,22 +71,19 @@ err_str(osdhud_state_t *state, int err)
 }
 
 void
-die(osdhud_state_t *state, char *msg)
+die(struct osdhud_state *state, char *msg)
 {
 	if (state->foreground)
-		fprintf(stderr,"[%s] ERROR: %s\n",state->argv0,msg);
-	else
-		syslog(LOG_ERR,"ERROR: %s",msg);
+		err(1,"%s",NULLS(msg));
+	syslog(LOG_ERR,"FATAL: %s",msg);
+	closelog();
 	exit(1);
 }
 
 void
-update_net_statistics(
-    osdhud_state_t     *state,
-    unsigned long       delta_ibytes,
-    unsigned long       delta_obytes,
-    unsigned long       delta_ipackets,
-    unsigned long       delta_opackets)
+update_net_statistics(struct osdhud_state *state, u_int64_t delta_ibytes,
+		      u_int64_t delta_obytes, u_int64_t delta_ipackets,
+		      u_int64_t delta_opackets)
 {
 	if (state->delta_t) {
 		float dt = (float)state->delta_t / 1000.0;
@@ -175,16 +97,16 @@ update_net_statistics(
 		state->net_opxps =
 			movavg_add(state->opxps_ma,delta_opackets) / dt;
 
-		DSPEW("net %s bytes in  += %lu -> %.2f / %f secs => %.2f",
+		DSPEW("net %s bytes in  += %llu -> %.2f / %f secs => %.2f",
 		      state->net_iface,delta_ibytes,movavg_val(state->ikbps_ma),
 		      dt,state->net_ikbps);
-		DSPEW("net %s bytes out += %lu -> %.2f / %f secs => %.2f",
+		DSPEW("net %s bytes out += %llu -> %.2f / %f secs => %.2f",
 		      state->net_iface,delta_obytes,movavg_val(state->okbps_ma),
 		      dt,state->net_okbps);
-		DSPEW("net %s packets   in  += %lu -> %.2f / %f secs => %.2f",
+		DSPEW("net %s packets   in  += %llu -> %.2f / %f secs => %.2f",
 		      state->net_iface,delta_ipackets,
 		      movavg_val(state->ipxps_ma),dt,state->net_ipxps);
-		DSPEW("net %s packets   out += %lu -> %.2f / %f secs => %.2f",
+		DSPEW("net %s packets   out += %llu -> %.2f / %f secs => %.2f",
 		      state->net_iface,delta_opackets,
 		      movavg_val(state->opxps_ma),dt,state->net_opxps);
 
@@ -192,7 +114,7 @@ update_net_statistics(
 }
 
 void
-clear_net_statistics(osdhud_state_t *state)
+clear_net_statistics(struct osdhud_state *state)
 {
 	state->net_ikbps = state->net_ipxps =
 		state->net_okbps = state->net_opxps = 0;
@@ -206,10 +128,9 @@ clear_net_statistics(osdhud_state_t *state)
 }
 
 void
-update_disk_statistics(osdhud_state_t *state, unsigned long long  delta_rbytes,
-		       unsigned long long delta_wbytes,
-		       unsigned long long delta_reads,
-		       unsigned long long delta_writes)
+update_disk_statistics(struct osdhud_state *state, u_int64_t delta_rbytes,
+		       u_int64_t delta_wbytes, u_int64_t delta_reads,
+		       u_int64_t delta_writes)
 {
 	if (state->delta_t) {
 		float dt = (float)state->delta_t / 1000.0;
@@ -315,7 +236,7 @@ DONE:
  * modules, e.g. openbsd.c, freebsd.c
  */
 void
-probe(osdhud_state_t *state)
+probe(struct osdhud_state *state)
 {
 	unsigned long now = time_in_milliseconds();
 
@@ -327,6 +248,7 @@ probe(osdhud_state_t *state)
 	probe_net(state);
 	probe_disk(state);
 	probe_battery(state);
+	probe_temperature(state);
 	probe_uptime(state);
 }
 
@@ -334,43 +256,82 @@ probe(osdhud_state_t *state)
  * Display Routines
  */
 
-void
-display_load(osdhud_state_t *state)
+char *
+reading_to_color(float percent)
 {
-	xosd_display(state->osd,state->disp_line++,XOSD_printf,"load: %.2f",
-		     state->load_avg);
-	if (state->max_load_avg) {
-		int percent = ipercent(state->load_avg/state->max_load_avg);
+	static char *colors[] = {
+		"green", "yellow", "orange", "red", "violet"
+	};
+	int severity;
 
-		xosd_display(state->osd,state->disp_line++,XOSD_percentage,
-			     percent);
+	if (percent <= 0.25)
+		severity = 0;
+	else if (percent <= 0.5)
+		severity = 1;
+	else if (percent <= 0.75)
+		severity = 2;
+	else if (percent <= 1.0)
+		severity = 3;
+	else
+		severity = 4;
+	return colors[severity];
+}
+
+xosd *
+osd_to_use(struct osdhud_state *state, int do_color, float reading)
+{
+	int off;
+	xosd *osd;
+
+	off = state->disp_line++;
+	assert(off < state->nlines);
+	osd = state->osds[off];
+	if (do_color) {
+		char *color;
+
+		color = reading_to_color(reading);
+		if (xosd_set_colour(osd, color))
+			syslog(LOG_WARNING,
+			       "could not set osd[%d] color to %s (%f)",
+				off,color,reading);
 	}
+	return osd;
 }
 
 void
-display_mem(osdhud_state_t *state)
+display_load(struct osdhud_state *state)
 {
-	int percent = (int)(100 * state->mem_used_percent);
+	float percent = safe_percent(state->load_avg,state->max_load_avg);
 
-	xosd_display(state->osd,state->disp_line++,XOSD_printf,"mem: %d%%",
-		     percent);
-	xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+	xosd_display(osd_to_use(state,1,percent),0,XOSD_printf,"load: %.2f",
+		     state->load_avg);
+	if (state->max_load_avg)
+		xosd_display(osd_to_use(state,1,percent),0,XOSD_percentage,
+			     ipercent(percent));
 }
 
 void
-display_swap(osdhud_state_t *state)
+display_mem(struct osdhud_state *state)
 {
-	int percent = (int)(100 * state->swap_used_percent);
+	xosd_display(osd_to_use(state,1,state->mem_used_percent),0,
+		     XOSD_printf,"mem: %d%%",ipercent(state->mem_used_percent));
+	xosd_display(osd_to_use(state,1,state->mem_used_percent),0,
+		     XOSD_percentage,ipercent(state->mem_used_percent));
+}
 
+void
+display_swap(struct osdhud_state *state)
+{
 	if (!state->nswap)
 		return;
-	xosd_display(state->osd,state->disp_line++,XOSD_printf,"swap: %d%%",
-		     percent);
-	xosd_display(state->osd,state->disp_line++,XOSD_percentage,percent);
+	xosd_display(osd_to_use(state,1,state->swap_used_percent),0,XOSD_printf,
+		     "swap: %d%%",ipercent(state->swap_used_percent));
+	xosd_display(osd_to_use(state,1,state->swap_used_percent),0,
+		     XOSD_percentage,ipercent(state->swap_used_percent));
 }
 
 void
-display_net(osdhud_state_t *state)
+display_net(struct osdhud_state *state)
 {
 	char *iface = state->net_iface? state->net_iface: "-";
 	int left, off, n;
@@ -381,7 +342,8 @@ display_net(osdhud_state_t *state)
 	char unit = 'k';
 	float unit_div = 1.0;
 	float max_kbps = ((float)state->net_speed_mbits / 8.0) * KILO;
-	int percent = max_kbps ? (int)(100 * (net_kbps / max_kbps)) : 0;
+	float raw_percent = safe_percent(net_kbps,max_kbps);
+	int percent = ipercent(raw_percent);
 
 	VSPEW("display_net %s net_speed_mbits %d max_kbps %f",
 	      iface,state->net_speed_mbits,max_kbps);
@@ -418,9 +380,10 @@ display_net(osdhud_state_t *state)
 					     percent);
 			else
 				/*
-				 * This must be because max_kbps is wrong, which
-				 * can happen if my guess is wrong or if the user
-				 * gives us a value for -X that is wrong.
+				 * This must be because max_kbps is
+				 * wrong, which can happen if my guess
+				 * is wrong or if the user gives us a
+				 * value for -X that is wrong.
 				 */
 				n = snprintf(&details[off],left,"> 100%%(!) ");
 			assert(n < left);
@@ -436,27 +399,26 @@ display_net(osdhud_state_t *state)
 	} else {
 		assert_strlcpy(details,TXT__QUIET_);
 	}
-	xosd_display(state->osd,state->disp_line++,XOSD_printf,"%s %s",
+
+	xosd_display(osd_to_use(state,1,raw_percent),0,XOSD_printf,"%s %s",
 		     label,details);
-	if (max_kbps) {
-		/* xosd_display() should check this but I dunno... */
-		percent = (percent > 100) ? 100 : percent;
-		xosd_display(state->osd,state->disp_line++,
-			     XOSD_percentage,percent);
-	}
+	if (max_kbps)
+		xosd_display(osd_to_use(state,1,raw_percent),0,XOSD_percentage,
+			     percent);
 }
 
 void
-display_disk(osdhud_state_t *state)
+display_disk(struct osdhud_state *state)
 {
 }
 
 void
-display_battery(osdhud_state_t *state)
+display_battery(struct osdhud_state *state)
 {
 	char *charging = state->battery_state[0] ?
 		state->battery_state : TXT__UNKNOWN_;
 	char mins[128] = { 0 };
+	float battery_used;
 
 	if (state->battery_missing)
 		return;
@@ -465,48 +427,54 @@ display_battery(osdhud_state_t *state)
 	} else {
 		assert_elapsed(mins,state->battery_time*60);
 	}
-	xosd_display(state->osd,state->disp_line++,XOSD_printf,
-		"battery: %s, %d%% charged (%s)",charging,
+	/* We want the color based on the percentage used, not remaining: */
+	battery_used = 1.0 - ((float)state->battery_life / 100.0);
+	xosd_display(osd_to_use(state,1,battery_used),0,XOSD_printf,
+		     "battery: %s, %d%% charged (%s)",charging,
 		     state->battery_life,mins);
-	xosd_display(state->osd,state->disp_line++,XOSD_percentage,
+	xosd_display(osd_to_use(state,1,battery_used),0,XOSD_percentage,
 		     state->battery_life);
 }
 
 void
-display_uptime(osdhud_state_t *state)
+display_temperature(struct osdhud_state *state)
+{
+}
+
+void
+display_uptime(struct osdhud_state *state)
 {
 	if (state->sys_uptime) {
 		unsigned long secs = state->sys_uptime;
 		char upbuf[64] = { 0 };
 
 		assert_elapsed(upbuf,secs);
-		xosd_display(state->osd,state->disp_line++,XOSD_printf,
-			     "up %s",upbuf);
+		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,
+			     "%s up %s",state->hostname,upbuf);
 	}
 }
 
 void
-display_message(osdhud_state_t *state)
+display_message(struct osdhud_state *state)
 {
 	if (!state->message_seen && state->message[0]) {
-		xosd_display(state->osd,state->disp_line++,XOSD_printf,"%s",
+		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,"%s",
 			     state->message);
 		state->message_seen = 1;
 	} else {
-		xosd_display(state->osd,state->disp_line++,XOSD_printf,"");
+		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,"");
 	}
 }
 
 void
-display_hudmeta(osdhud_state_t *state)
+display_hudmeta(struct osdhud_state *state)
 {
 	unsigned int now = time_in_milliseconds();
 	unsigned int dt = now - state->t0_msecs;
 	unsigned int left = (dt < state->duration_msecs) ?
 		state->duration_msecs - dt : 0;
 	unsigned int left_secs = (left + 500) / 1000;
-	xosd *osd = state->osd2;
-	int line = 0;
+	xosd *osd = state->osd_bot;
 	char now_str[512] = { 0 };
 	char left_s[512] = { 0 };
 
@@ -519,12 +487,8 @@ display_hudmeta(osdhud_state_t *state)
 		};
 
 		(void) localtime_r(&now,&ltime);
-		if (!strftime(now_str,sizeof(now_str),state->time_fmt,&ltime)) {
-			syslog(LOG_ERR,"time fmt '%s' -> "SIZEOF_F"b - disabled",
-				state->time_fmt,sizeof(now_str));
-			free(state->time_fmt);
-			state->time_fmt = NULL;
-		}
+		assert(strftime(now_str,sizeof(now_str),state->time_fmt,
+				&ltime) > 0);
 	}
 
 	if (state->stuck) {
@@ -539,19 +503,17 @@ display_hudmeta(osdhud_state_t *state)
 			assert_strlcpy(left_s,TXT__BLINK_);
 	}
 	if (state->time_fmt)
-		xosd_display(
-			osd,line,XOSD_printf,"%s%s%s%s",now_str,
-			left_s[0]? " [": "",left_s,left_s[0]? "]":""
-			);
+		xosd_display(osd,0,XOSD_printf,"%s%s%s%s",now_str,
+			     left_s[0]? " [": "",left_s,left_s[0]? "]":"");
 	else if (left_s[0])
-		xosd_display(osd,line,XOSD_printf,"[%s]",left_s);
+		xosd_display(osd,0,XOSD_printf,"[%s]",left_s);
 }
 
 /*
  * Display the HUD
  */
 void
-display(osdhud_state_t *state)
+display(struct osdhud_state *state)
 {
 	state->disp_line = 0;
 	display_uptime(state);
@@ -561,6 +523,7 @@ display(osdhud_state_t *state)
 	display_net(state);
 	display_disk(state);
 	display_battery(state);
+	display_temperature(state);
 	display_message(state);
 	display_hudmeta(state);
 }
@@ -583,7 +546,7 @@ display(osdhud_state_t *state)
    -X mb/s  fix max net link speed in mbit/sec (def: query interface)\n"
 
 int
-usage(osdhud_state_t *state, char *msg)
+usage(struct osdhud_state *state, char *msg)
 {
 	int fail = 0;
 
@@ -594,7 +557,7 @@ usage(osdhud_state_t *state, char *msg)
 		if (msg)
 			fprintf(stderr,"%s ERROR: %s\n",state->argv0,msg);
 		else {
-			fprintf(stderr,"%s %s: heads-up system status display\n",
+			fprintf(stderr,"%s %s: system status HUD\n",
 				state->argv0,VERSION);
 			fprintf(stderr,USAGE_MSG,state->argv0,
 				state->argv0,VERSION);
@@ -605,10 +568,10 @@ usage(osdhud_state_t *state, char *msg)
 }
 
 /*
- * Parse command-line arguments into osdhud_state_t structure
+ * Parse command-line arguments into struct osdhud_state structure
  */
 int
-parse(osdhud_state_t *state, int argc, char **argv)
+parse(struct osdhud_state *state, int argc, char **argv)
 {
 	int fail = 0;
 	int ch = -1;
@@ -729,8 +692,10 @@ parse(osdhud_state_t *state, int argc, char **argv)
 }
 
 void
-init_state(osdhud_state_t *state, char *argv0)
+init_state(struct osdhud_state *state, char *argv0)
 {
+	int i;
+
 	if (!argv0)
 		state->argv0 = NULL;
 	else {
@@ -760,7 +725,8 @@ init_state(osdhud_state_t *state, char *argv0)
 	state->delta_t = 0;
 	state->pos_x = DEFAULT_POS_X;
 	state->pos_y = DEFAULT_POS_Y;
-	state->nlines = DEFAULT_NLINES;
+	state->nlines = 0;
+	state->line_height = DEFAULT_LINE_HEIGHT;
 	state->width = DEFAULT_WIDTH;
 	state->display_msecs = DEFAULT_DISPLAY;
 	state->t0_msecs = 0;
@@ -771,7 +737,8 @@ init_state(osdhud_state_t *state, char *argv0)
 	state->short_pause_msecs = DEFAULT_SHORT_PAUSE;
 	state->long_pause_msecs = DEFAULT_LONG_PAUSE;
 	state->net_movavg_wsize = DEFAULT_NET_MOVAVG_WSIZE;
-	state->load_avg = state->mem_used_percent = state->swap_used_percent = 0;
+	state->load_avg = state->mem_used_percent =
+		state->swap_used_percent = 0;
 	state->per_os_data = NULL;
 	state->net_ikbps = state->net_ipxps =
 		state->net_okbps = state->net_opxps = 0;
@@ -789,19 +756,20 @@ init_state(osdhud_state_t *state, char *argv0)
 	state->last_t = 0;
 	state->first_t = 0;
 	state->sys_uptime = 0;
-	state->osd = NULL;
+	for (i = 0; i < ARRAY_SIZE(state->osds); i++)
+		state->osds[i] = NULL;
+	state->osd_bot = NULL;
+	state->disp_line = 0;
 	memset(state->message,0,sizeof(state->message));
 	state->message_seen = 0;
-	state->osd2 = NULL;
-	state->disp_line = 0;
 	memset(state->errbuf,0,sizeof(state->errbuf));
 }
 
-osdhud_state_t *
-create_state(osdhud_state_t *state)
+struct osdhud_state *
+create_state(struct osdhud_state *state)
 {
-	osdhud_state_t *new_state =
-		(osdhud_state_t *)malloc(sizeof(osdhud_state_t));
+	struct osdhud_state *new_state =
+		(struct osdhud_state *)malloc(sizeof(struct osdhud_state));
 
 	if (new_state) {
 		init_state(new_state,NULL);
@@ -834,7 +802,6 @@ create_state(osdhud_state_t *state)
 		dup_field(time_fmt);
 		set_field(pos_x);
 		set_field(pos_y);
-		set_field(nlines);
 		set_field(width);
 		set_field(display_msecs);
 		set_field(short_pause_msecs);
@@ -848,12 +815,17 @@ create_state(osdhud_state_t *state)
 }
 
 void
-cleanup_state(osdhud_state_t *state)
+cleanup_state(struct osdhud_state *state)
 {
+	int i;
+
 	if (state) {
-		if (state->osd) {
-			xosd_destroy(state->osd);
-			xosd_destroy(state->osd2);
+		if (state->osds[0]) {
+			for (i = 0; i < state->nlines; i++) {
+				xosd_destroy(state->osds[i]);
+				state->osds[i] = NULL;
+			}
+			xosd_destroy(state->osd_bot);
 		}
 		probe_cleanup(state);
 		if (state->time_fmt) {
@@ -886,7 +858,7 @@ cleanup_state(osdhud_state_t *state)
 }
 
 void
-free_state(osdhud_state_t *dispose)
+free_state(struct osdhud_state *dispose)
 {
 	cleanup_state(dispose);
 	free(dispose);
@@ -944,7 +916,7 @@ free_split(int argc, char **argv)
 }
 
 void
-cleanup_daemon(osdhud_state_t *state)
+cleanup_daemon(struct osdhud_state *state)
 {
 	if (state->sock_fd >= 0) {
 		close(state->sock_fd);
@@ -958,7 +930,7 @@ cleanup_daemon(osdhud_state_t *state)
 }
 
 void
-clear_net_info(osdhud_state_t *state)
+clear_net_info(struct osdhud_state *state)
 {
 	clear_net_statistics(state);
 	state->net_speed_mbits = 0;
@@ -968,7 +940,7 @@ clear_net_info(osdhud_state_t *state)
  * Attempt to receive a message via our control socket and act on it
  */
 int
-handle_message(osdhud_state_t *state)
+handle_message(struct osdhud_state *state)
 {
 	int client = -1;
 	int retval = 0;
@@ -989,12 +961,12 @@ handle_message(osdhud_state_t *state)
 		char *msg = fgets(msgbuf,OSDHUD_MAX_MSG_SIZE,stream);
 
 		if (!msg)
-			syslog(LOG_WARNING,"error reading from client: %s (#%d)",
+			syslog(LOG_WARNING,"error reading client: %s (#%d)",
 				err_str(state,errno),errno);
 		else {
 			int argc = 0;
 			char **argv = NULL;
-			osdhud_state_t *foo = create_state(state);
+			struct osdhud_state *foo = create_state(state);
 			size_t msglen = strlen(msg);
 
 			/* The message is just command-line args */
@@ -1022,6 +994,7 @@ handle_message(osdhud_state_t *state)
 				syslog(LOG_WARNING,"parse error for '%s'",msg);
 			else {
 				/* Successfully parsed msg */
+
 #define setparam(nn,ff)							\
 				do {					\
 					if (state->verbose)		\
@@ -1120,7 +1093,7 @@ handle_message(osdhud_state_t *state)
 
 #ifdef ENABLE_ALERTS
 int
-check_alerts(osdhud_state_t *state)
+check_alerts(struct osdhud_state *state)
 {
 	int nalerts = 0;
 
@@ -1169,7 +1142,7 @@ check_alerts(osdhud_state_t *state)
  * cleanly.
  */
 int
-check(osdhud_state_t *state)
+check(struct osdhud_state *state)
 {
 	int done = 0;
 	int quit_loop = 0;
@@ -1231,7 +1204,7 @@ check(osdhud_state_t *state)
 		}
 		/* Deal with signals-based flags */
 		if (interrupted) {
-			syslog(LOG_WARNING,"interrupted - bailing out by force");
+			syslog(LOG_WARNING,"interrupted - bailing out");
 			done = quit_loop = state->server_quit = 1;
 		}
 		if (restart_req)
@@ -1262,11 +1235,11 @@ check(osdhud_state_t *state)
 	return quit_loop;
 }
 
-/**
+/*
  * Turn state into equivalent command-line options to send to running instance
  */
 int
-pack_message(osdhud_state_t *state, char **out_msg)
+pack_message(struct osdhud_state *state, char **out_msg)
 {
 	int len = 1, off = 0, left = 0;
 	char *packed = NULL;
@@ -1364,7 +1337,7 @@ pack_message(osdhud_state_t *state, char **out_msg)
  * If we can make contact with an existing instance of ourselves via
  * the control socket then send a message to it and return true.
  */
-int kicked(osdhud_state_t *state)
+int kicked(struct osdhud_state *state)
 {
 	int sock_fd = -1;
 	struct stat sock_stat;
@@ -1418,7 +1391,7 @@ int kicked(osdhud_state_t *state)
  * and false otherwise ala fork(2).
  */
 int
-forked(osdhud_state_t *state)
+forked(struct osdhud_state *state)
 {
 	int child = -1;
 	int fd = -1;
@@ -1443,10 +1416,11 @@ forked(osdhud_state_t *state)
 }
 
 xosd *
-create_big_osd(osdhud_state_t *state, char *font)
+create_big_osd(struct osdhud_state *state, char *font)
 {
-	xosd *osd = xosd_create(state->nlines);
+	xosd *osd;
 
+	osd = xosd_create(1);
 	if (!osd) {
 		SPEWE("could not create osd display");
 		exit(1);
@@ -1458,14 +1432,15 @@ create_big_osd(osdhud_state_t *state, char *font)
 	xosd_set_align(osd,XOSD_left);
 	xosd_set_pos(osd,XOSD_top);
 	xosd_set_horizontal_offset(osd,state->pos_x);
-	xosd_set_vertical_offset(osd,state->pos_y);
+	xosd_set_vertical_offset(osd,state->pos_y +
+				 (state->line_height * state->nlines++));
 	xosd_set_bar_length(osd,state->width);
 
 	return osd;
 }
 
 xosd *
-create_small_osd(osdhud_state_t *state, char *font)
+create_small_osd(struct osdhud_state *state, char *font)
 {
 	xosd *osd = xosd_create(1);
 
@@ -1484,41 +1459,49 @@ create_small_osd(osdhud_state_t *state, char *font)
 }
 
 void
-hud_up(osdhud_state_t *state)
+hud_up(struct osdhud_state *state)
 {
 	char *font = state->font ? state->font : DEFAULT_FONT;
+	int i;
 
 	if (state->verbose > 1)
-		syslog(LOG_WARNING,"HUD coming up, osd @ %p",state->osd);
+		syslog(LOG_WARNING,"HUD coming up");
 
-	if (!state->osd) {
-		state->osd = create_big_osd(state,font);
-		state->osd2 = create_small_osd(state,font);
-	} else {
-		if (xosd_show(state->osd)) {
-			syslog(LOG_ERR,"xosd_show failed (#1): %s",xosd_error);
-			exit(1);
+	if (!state->osds[0]) {
+		for (i = 0; i < ARRAY_SIZE(state->osds); i++) {
+			state->osds[i] = create_big_osd(state,font);
+			assert(state->osds[i]);
+			xosd_hide(state->osds[i]);
 		}
-		if (xosd_show(state->osd2)) {
-			syslog(LOG_ERR,"xosd_show failed (#2): %s",xosd_error);
-			exit(1);
-		}
+		state->osd_bot = create_small_osd(state,font);
+		xosd_hide(state->osd_bot);
 	}
+	for (i = 0; i < state->nlines; i++)
+		if (xosd_show(state->osds[i])) {
+			syslog(LOG_ERR,"xosd_show failed #%d: %s",i,xosd_error);
+			exit(1);
+		}
+	if (xosd_show(state->osd_bot)) {
+		syslog(LOG_ERR,"xosd_show failed (#2): %s",xosd_error);
+		exit(1);
+	}
+
 	state->hud_is_up = 1;
 	state->t0_msecs = time_in_milliseconds();
 	state->duration_msecs = state->display_msecs;
 }
 
 void
-hud_down(osdhud_state_t *state)
+hud_down(struct osdhud_state *state)
 {
+	int i;
+
 	if (state->verbose)
 		syslog(LOG_WARNING,"HUD coming down");
 
-	if (state->osd) {
-		xosd_hide(state->osd);
-		xosd_hide(state->osd2);
-	}
+	for (i = 0; i < state->nlines; i++)
+		xosd_hide(state->osds[i]);
+	xosd_hide(state->osd_bot);
 
 	state->hud_is_up = 0;
 }
@@ -1546,7 +1529,7 @@ handle_signal(int signo, siginfo_t *info, void *ptr)
 }
 
 void
-init_signals(osdhud_state_t *state)
+init_signals(struct osdhud_state *state)
 {
 	struct sigaction sact;
 
@@ -1566,10 +1549,19 @@ init_signals(osdhud_state_t *state)
 }
 
 void
-setup_daemon(osdhud_state_t *state)
+setup_daemon(struct osdhud_state *state)
 {
-	int syslog_flags = LOG_PID;
+	int syslog_flags = LOG_PID, i;
 
+	if (gethostname(state->hostname,sizeof(state->hostname))) {
+		perror("gethostname");
+		exit(1);
+	}
+	for (i = 0; state->hostname[i]; i++)
+		if (state->hostname[i] == '.') {
+			state->hostname[i] = 0;
+			break;
+		}
 	if (state->foreground)
 		syslog_flags |= LOG_PERROR;
 	openlog(state->argv0,syslog_flags,LOG_LOCAL0);
@@ -1606,13 +1598,22 @@ setup_daemon(osdhud_state_t *state)
 	probe_init(state);                  /* per-OS probe init */
 }
 
-/**
- * osdhud - main program
+/*
+ * osdhud - heads-up style system status display
+ *
+ * This command should be bound to some key in your window manager.
+ * When invoked it brings up a heads-up display overlaid on the screen
+ * via libosd.  It stays up for some configurable duration during
+ * which it updates in real time, then disappears.  The default is for
+ * the display to stay up for 2 seconds and update every 100
+ * milliseconds.  The display includes load average, memory
+ * utilization, swap utilization, network utilization, battery
+ * lifetime and uptime.
  *
  * The idea is that just running us from a keybinding in the window
- * manager with no arguments should do something reasonable: the
- * HUD appears for a couple of seconds and fades away if nothing else
- * is done.  If we are invoked while the HUD is still up then it will
+ * manager with no arguments should do something reasonable: the HUD
+ * appears for a couple of seconds and fades away if nothing else is
+ * done.  If we are invoked while the HUD is still up then it will
  * stay up longer.  This is intuitively what I want:
  *     more hit key -> more hud
  *     stop hit key -> no more hud
@@ -1622,7 +1623,7 @@ setup_daemon(osdhud_state_t *state)
 int
 main(int argc, char **argv)
 {
-	osdhud_state_t state;
+	struct osdhud_state state;
 
 	init_state(&state,argv[0]);
 	if (parse(&state,argc,argv))
@@ -1641,7 +1642,7 @@ main(int argc, char **argv)
 		path_len = asprintf(&path,"%s/.%s_%s.sock",home,state.argv0,
 				    VERSION);
 		if (path_len < 0)
-			usage(&state,"could mk default sock path... why?");
+			usage(&state,"could not mk default sock path... why?");
 		if (state.verbose)
 			fprintf(stderr,"[%s] socket: %s\n",state.argv0,path);
 		state.sock_path = path;

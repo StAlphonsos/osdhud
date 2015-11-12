@@ -24,6 +24,9 @@
 #include <stdlib.h>
 #include "movavg.h"
 
+/*
+ * Allocate a new moving average
+ */
 struct movavg *
 movavg_new(int wsize)
 {
@@ -40,6 +43,9 @@ movavg_new(int wsize)
 	return ma;
 }
 
+/*
+ * Tear down a moving average
+ */
 void
 movavg_free(struct movavg *ma)
 {
@@ -48,6 +54,9 @@ movavg_free(struct movavg *ma)
 	free(ma);
 }
 
+/*
+ * Reset a moving average to its initial state (all zeroes)
+ */
 void
 movavg_clear(struct movavg *ma)
 {
@@ -61,6 +70,11 @@ movavg_clear(struct movavg *ma)
 	}
 }
 
+/*
+ * Add a new value to the moving average.  Returns the moving average
+ * value after accounting for the new value.  If the window is full
+ * the oldest value is (re)moved.
+ */
 float
 movavg_add(struct movavg *ma, float val)
 {
@@ -81,6 +95,9 @@ movavg_add(struct movavg *ma, float val)
 	return result;
 }
 
+/*
+ * Return the current value of the moving average.
+ */
 float
 movavg_val(struct movavg *ma)
 {

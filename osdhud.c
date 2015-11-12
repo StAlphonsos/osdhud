@@ -475,7 +475,7 @@ display_hudmeta(struct osdhud_state *state)
 		state->duration_msecs - dt : 0;
 	unsigned int left_secs = (left + 500) / 1000;
 	xosd *osd = state->osd_bot;
-	char now_str[512] = { 0 };
+v	char now_str[512] = { 0 };
 	char left_s[512] = { 0 };
 
 	if (state->time_fmt) {
@@ -1617,8 +1617,8 @@ setup_daemon(struct osdhud_state *state)
  * stay up longer.  This is intuitively what I want:
  *     more hit key -> more hud
  *     stop hit key -> no more hud
- * I call this the Caveman Theory of Human/Computer Interaction:
- * PUNCH COMPUTER TO MAKE IT GO.
+ * I call this the Caveman Theory of Human/Computer Interaction: PUNCH
+ * COMPUTER TO MAKE IT GO.
  */
 int
 main(int argc, char **argv)

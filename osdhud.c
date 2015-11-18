@@ -475,7 +475,7 @@ display_hudmeta(struct osdhud_state *state)
 		state->duration_msecs - dt : 0;
 	unsigned int left_secs = (left + 500) / 1000;
 	xosd *osd = state->osd_bot;
-v	char now_str[512] = { 0 };
+	char now_str[512] = { 0 };
 	char left_s[512] = { 0 };
 
 	if (state->time_fmt) {

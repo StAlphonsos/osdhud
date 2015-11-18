@@ -85,7 +85,7 @@ install:: all
 	$(INSTALL) $(MANPAGE) $(MANDIR)/man$(MANEXT)/
 
 clean::
-	$(RM) -f osdhud.o $(UNAME).o osdhud version.h $(DOC_EPHEM)
+	$(RM) -f osdhud.o movavg.o $(UNAME).o osdhud version.h $(DOC_EPHEM)
 
 distclean:: clean
 	$(RM) -f $(DIST_TAR) $(DIST_TAR_GZ) Makefile config.h config.mk

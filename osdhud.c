@@ -60,6 +60,7 @@ volatile sig_atomic_t bang_bang = 0;	/* got a SIGINFO */
 
 #define safe_percent(a,b) b? a/b: 0;	/* don't divide by zero */
 #define ipercent(v) (int)(100 * (v))	/* 0.05 -> 5 */
+
 /*#define ENABLE_ALERTS 1*/
     
 char *
@@ -439,6 +440,13 @@ display_battery(struct osdhud_state *state)
 void
 display_temperature(struct osdhud_state *state)
 {
+	float percent = safe_percent(state->temperature,state->max_temperature);
+
+	xosd_display(osd_to_use(state,1,percent),0,XOSD_printf,
+		     "temp: %.2f degC (%s)", state->temperature,
+		     state->temp_sensor_name);
+	xosd_display(osd_to_use(state,1,percent),0,XOSD_percentage,
+		     ipercent(percent));
 }
 
 void
@@ -528,14 +536,17 @@ display(struct osdhud_state *state)
 	display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:knDUSNFCwhgaAt?"
+#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:m:M:knDUSNFCwhgaAt?"
 #define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
-              [-f font] [-s path] [-i iface]\n\
+              [-f font] [-s path] [-i iface] [-T fmt] [-m sensor_name] [-M max_temp]\n\
    -v verbose      | -k kill server | -F run in foreground\n\
    -D down HUD     | -U up HUD      | -S stick HUD | -N unstick HUD\n\
    -g debug mode   | -t toggle mode | -w don't show swap\n\
    -n don't show HUD on startup     | -C display HUD countdown\n\
    -h,-? display this\n\
+   -m name  name of temp. sensor to use (def: first one found)\n\
+            to see the available sensors do: -m list\n\
+   -M degC  set our idea of the max temperature in degC (def: 100)\n\
    -T fmt   show time using strftime fmt (def: %%Y-%%m-%%d %%H:%%M:%%S)\n\
    -d msec  leave HUD visible for millis (def: 2000)\n\
    -p msec  millis between sampling when HUD is up (def: 100)\n\
@@ -602,6 +613,18 @@ parse(struct osdhud_state *state, int argc, char **argv)
 		case 'T':
 			state->time_fmt = strdup(optarg);
 			DBG2("parsed -%c %s",ch,state->time_fmt);
+			break;
+		case 'm':
+			if (!strcmp(optarg,"list")) {
+				print_temperature_sensors();
+				exit(1);
+			}
+			state->temp_sensor_name = strdup(optarg);
+			DBG2("parsed -%c %s",ch,state->temp_sensor_name);
+			break;
+		case 'M':
+			if (sscanf(optarg,"%f",&state->max_temperature) != 1)
+				fail = usage(state,"bad value for -M");
 			break;
 		case 'v':                       /* verbose */
 			state->verbose++;
@@ -715,6 +738,8 @@ init_state(struct osdhud_state *state, char *argv0)
 #ifdef DEFAULT_TIME_FMT
 	state->time_fmt = strdup(DEFAULT_TIME_FMT);
 #endif
+	state->temp_sensor_name = NULL;
+	state->temperature = 0;
 	memset((void *)&state->addr,0,sizeof(state->addr));
 	state->font = NULL;
 	state->net_iface = NULL;
@@ -734,6 +759,7 @@ init_state(struct osdhud_state *state, char *argv0)
 	state->min_battery_life = DEFAULT_MIN_BATTERY_LIFE;
 	state->max_load_avg = DEFAULT_MAX_LOAD_AVG;
 	state->max_mem_used = DEFAULT_MAX_MEM_USED;
+	state->max_temperature = DEFAULT_MAX_TEMPERATURE;
 	state->short_pause_msecs = DEFAULT_SHORT_PAUSE;
 	state->long_pause_msecs = DEFAULT_LONG_PAUSE;
 	state->net_movavg_wsize = DEFAULT_NET_MOVAVG_WSIZE;
@@ -800,6 +826,8 @@ create_state(struct osdhud_state *state)
 		dup_field(net_iface);
 		set_field(net_speed_mbits);
 		dup_field(time_fmt);
+		dup_field(temp_sensor_name);
+		set_field(max_temperature);
 		set_field(pos_x);
 		set_field(pos_y);
 		set_field(width);
@@ -1657,7 +1685,7 @@ main(int argc, char **argv)
 			printf("%s: kicked existing osdhud\n",state.argv0);
 	} else if (forked(&state)) {
 		/* Everything in here spews to syslog */
-		setup_daemon(&state);           /* init daemon state */
+		setup_daemon(&state);
 		if (!state.quiet_at_start)
 			hud_up(&state);
 		do {

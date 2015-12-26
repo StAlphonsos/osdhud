@@ -26,8 +26,8 @@
 #define SECSPERHOUR     (SECSPERMIN*60)
 #define SECSPERDAY      (SECSPERHOUR*24)
 
-#define SIZEOF_F "%lu"
-#define SIZE_T_F SIZEOF_F
+#define SIZEOF_F "%lu"			/* printf fmt for sizeof() */
+#define SIZE_T_F SIZEOF_F		/* printf fmt for size_t */
 
 #define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))
 #define NULLS(_x_) ((_x_) ? (_x_) : "NULL")
@@ -64,10 +64,13 @@ struct osdhud_state {
 	char		*net_iface;
 	int		 net_speed_mbits;
 	char		*time_fmt;
+	char		*temp_sensor_name;
+	double		 temperature;
 	int		 nswap;
 	int		 min_battery_life;
 	float		 max_load_avg;
 	float		 max_mem_used;
+	float		 max_temperature;
 	u_int64_t	 net_tot_ipackets;
 	u_int64_t	 net_tot_ierr;
 	u_int64_t	 net_tot_opackets;
@@ -128,6 +131,7 @@ struct osdhud_state {
 #define KILO 1024
 #define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
+/* XXX this introduces a dep on fonts/terminus; default should be in base */
 #define DEFAULT_FONT "-xos4-terminus-medium-r-normal--32-320-72-72-c-160-iso8859-1"
 /*#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"*/
 #define DEFAULT_POS_X 10
@@ -144,6 +148,7 @@ struct osdhud_state {
 #define DEFAULT_MIN_BATTERY_LIFE 10
 #define DEFAULT_MAX_LOAD_AVG 0.0
 #define DEFAULT_MAX_MEM_USED 0.9
+#define DEFAULT_MAX_TEMPERATURE 120
 
 #define DBG1(fmt,arg1)                                                  \
     if (state->debug) {                                                 \
@@ -218,7 +223,11 @@ struct osdhud_state {
 #define TXT__UNKNOWN_           "-unknown-"
 #define TXT__STUCK_             "-stuck-"
 #define TXT__ALERT_             "-alert-"
-#define TXT__BLINK_             "-blink-"
+#ifdef BLINK
+# define TXT__BLINK_            "-blink-"
+#else
+# define TXT__BLINK_		"hud down in 0"
+#endif
 #define TXT_ALERT_BATTERY_LOW   "BATTERY LOW"
 #define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
 #define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
@@ -251,6 +260,8 @@ void probe_disk(struct osdhud_state *);
 void probe_battery(struct osdhud_state *);
 void probe_temperature(struct osdhud_state *);
 void probe_uptime(struct osdhud_state *);
+
+void print_temperature_sensors(void); /* exported from per-os as well */
 
 /*
  * Local variables:

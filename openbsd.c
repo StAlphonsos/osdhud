@@ -85,6 +85,7 @@
 #include <time.h>
 #include <sys/resource.h>
 #include <sys/sysctl.h>
+#include <sys/sensors.h>
 #include <sys/vmmeter.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -105,7 +106,7 @@
 
 #define APM_DEV "/dev/apm"
 #define LOG1024        10
-#define pagetok(size) ((size) << pageshift)
+#define pagetok(size,ps) ((size) << ps)
 
 /* lifted from systat ca. openbsd 5.5 */
 
@@ -131,20 +132,20 @@ struct ifstat {
 };
 
 struct openbsd_data {
-	int                 nifs;
-	struct ifstat      *ifstats;
+	int		    pageshift;
+	int                 nifs;	/* number of interfaces */
+	struct ifstat      *ifstats;	/* that many ifstat structs */
 	struct timeval      boottime;
 	struct swapent     *swap_devices;
 	int                 ncpus;
-	Pvoid_t             groups;         /* judy str->ptr hash */
+	Pvoid_t             groups;	/* judy str->ptr hash for if groups */
 	int                 ndrive;
 	struct diskstats   *drive_stats;
 	char              **drive_names;    /* points into drive_names_raw */
 	char               *drive_names_raw;
 	size_t              drive_names_raw_size;
+	struct temp_sensor *temp_sensor;
 };
-
-static int pageshift;
 
 /*
  * This is my first attempt at a table that maps media flags to
@@ -211,9 +212,115 @@ static struct { int bits; int mbit_sec; } media_speeds[] = {
 	{ 0,                          10 }, /* default for the 1st world :-) */
 };
 
-/* also from systat/if.c */
+/* For the temperature probe */
+
+SLIST_HEAD(, temp_sensor) temp_sensors;
+struct temp_sensor {
+	SLIST_ENTRY(temp_sensor) entries;
+	char name[128];
+	int mib[5];
+	char desc[128];
+	double val;
+};
+int n_temp_sensors;
+
+static void
+load_temperature_sensors()
+{
+	int mib[5] = { CTL_HW, HW_SENSORS, 0, 0, 0 };
+	int dev;
+	struct sensordev snsrdev;
+	size_t sdlen = sizeof(snsrdev);
+	int numt;
+	struct sensor snsr;
+	size_t slen = sizeof(snsr);
+	struct temp_sensor *tail;
+
+	SLIST_INIT(&temp_sensors);
+	n_temp_sensors = 0;
+	tail = NULL;
+	for (dev = 0; ; dev++) {
+		mib[2] = dev;
+		if (sysctl(mib, 3, &snsrdev, &sdlen, NULL, 0) == -1) {
+			if (errno == ENXIO)
+				continue;
+			if (errno == ENOENT)
+				break;
+		}
+		mib[3] = SENSOR_TEMP;
+		for (numt = 0; numt < snsrdev.maxnumt[mib[3]]; numt++){
+			mib[4] = numt;
+			if (sysctl(mib, 5, &snsr, &slen, NULL, 0) == -1)
+				continue;
+			if (slen && !(snsr.flags & SENSOR_FINVALID)) {
+				struct temp_sensor *s;
+
+				s = malloc(sizeof(struct temp_sensor));
+				assert_snprintf(s->name,"hw.sensors.%s.temp%d",
+						snsrdev.xname, numt);
+				s->mib[0] = mib[0];
+				s->mib[1] = mib[1];
+				s->mib[2] = mib[2];
+				s->mib[3] = mib[3];
+				s->mib[4] = mib[4];
+				s->desc[0] = 0;
+				assert_strlcpy(s->desc, snsr.desc);
+				s->val = (snsr.value - 273150000) / 1000000.0;
+				if (tail == NULL) {
+					SLIST_INSERT_HEAD(&temp_sensors, s,
+							  entries);
+					tail = s;
+				} else {
+					SLIST_INSERT_AFTER(tail, s, entries);
+					tail = s;
+				}
+				n_temp_sensors++;
+			}
+		}
+	}
+}
+
+static struct temp_sensor *
+find_temperature_sensor(char *name)
+{
+	struct temp_sensor *s;
+
+	SLIST_FOREACH(s, &temp_sensors, entries)
+		if (!strcmp(s->name, name))
+			return s;
+	return NULL;
+}
+
+static void
+update_temperature_sensors()
+{
+	struct temp_sensor *s;
+	struct sensor snsr;
+	size_t slen = sizeof(snsr);
+
+	SLIST_FOREACH(s, &temp_sensors, entries) {
+		if (sysctl(s->mib, 5, &snsr, &slen, NULL, 0) == -1)
+			continue;
+		s->val = (snsr.value - 273150000) / 1000000.0;
+	}
+}
 
 void
+print_temperature_sensors()
+{
+	struct temp_sensor *s;
+
+	if (!n_temp_sensors)
+		load_temperature_sensors();
+	printf("Valid temperature sensors and their current values:\n");
+	SLIST_FOREACH(s, &temp_sensors, entries)
+		printf("%s = %.2f degC%s%s%s\n", s->name, s->val,
+		       s->desc[0] ? " (": "", s->desc, s->desc[0]? ")": "");
+}
+
+/* also from systat/if.c */
+
+static void
 rt_getaddrinfo(struct sockaddr *sa, int addrs, struct sockaddr **info)
 {
 	int i;
@@ -237,19 +344,20 @@ probe_init(struct osdhud_state *state)
 	struct openbsd_data *obsd;
 	size_t size = 0;
 
-	/* taken from /usr/src/usr.bin/top/machine.c as of OpenBSD 5.5 */
-	pagesize = getpagesize();
-	pageshift = 0;
-	while (pagesize > 1) {
-		pageshift++;
-		pagesize >>= 1;
-	}
-	pageshift -= LOG1024;
 
 	obsd = (struct openbsd_data *)malloc(sizeof(struct openbsd_data));
 	assert(obsd);
 	obsd->nifs = 0;
 	obsd->ifstats = NULL;
+
+	/* adapted from /usr/src/usr.bin/top/machine.c as of OpenBSD 5.5 */
+	pagesize = getpagesize();
+	obsd->pageshift = 0;
+	while (pagesize > 1) {
+		obsd->pageshift++;
+		pagesize >>= 1;
+	}
+	obsd->pageshift -= LOG1024;
 
 	size = sizeof(obsd->boottime);
 	assert(!sysctl(mib,2,&obsd->boottime,&size,NULL,0));
@@ -277,6 +385,29 @@ probe_init(struct osdhud_state *state)
 	obsd->drive_names = NULL;
 	obsd->drive_names_raw = NULL;
 	obsd->drive_names_raw_size = 0;
+
+	load_temperature_sensors();
+	if (n_temp_sensors) {
+		if (state->temp_sensor_name == NULL) {
+			/* Pick the first one */
+			obsd->temp_sensor = SLIST_FIRST(&temp_sensors);
+			state->temp_sensor_name =
+				strdup(obsd->temp_sensor->name);
+		} else {
+			struct temp_sensor *tsens;
+
+			tsens = find_temperature_sensor(
+				state->temp_sensor_name);
+			if (tsens == NULL) {
+				tsens = SLIST_FIRST(&temp_sensors);
+				syslog(LOG_ERR, "invalid temp sensor '%s'"
+				       " - using '%s' instead",
+				       state->temp_sensor_name, tsens->name);
+				obsd->temp_sensor = tsens;
+				state->temp_sensor_name = strdup(tsens->name);
+			}
+		}
+	}
 
 	state->per_os_data = (void *)obsd;
 }
@@ -328,6 +459,7 @@ probe_load(struct osdhud_state *state)
 void
 probe_mem(struct osdhud_state *state)
 {
+	struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
 	static int vmtotal_mib[] = {CTL_VM, VM_METER};
 	struct vmtotal vmtotal;
 	size_t size = sizeof(vmtotal);
@@ -338,8 +470,8 @@ probe_mem(struct osdhud_state *state)
 		SPEWE("sysctl");
 		memset(&vmtotal,0,sizeof(vmtotal));
 	}
-	tot_kbytes = (float)pagetok(vmtotal.t_rm);
-	act_kbytes = (float)pagetok(vmtotal.t_arm);
+	tot_kbytes = (float)pagetok(vmtotal.t_rm,obsd->pageshift);
+	act_kbytes = (float)pagetok(vmtotal.t_arm,obsd->pageshift);
 	state->mem_used_percent = tot_kbytes ? act_kbytes / tot_kbytes : 0;
 }
 
@@ -363,7 +495,7 @@ probe_swap(struct osdhud_state *state)
 	state->swap_used_percent = (float)used / (float)xsize;
 }
 
-int
+static int
 get_speed(int sock,char *name,struct osdhud_state *state)
 {
 	struct ifmediareq media;
@@ -441,7 +573,6 @@ DONE:
 }
 
 void
-
 probe_net(struct osdhud_state *state)
 {
 	char *buf, *next, *lim;
@@ -753,6 +884,27 @@ probe_battery(struct osdhud_state *state)
 void
 probe_temperature(struct osdhud_state *state)
 {
+	struct openbsd_data *obsd = (struct openbsd_data *)state->per_os_data;
+
+	if (!n_temp_sensors)
+		return;
+	update_temperature_sensors();
+	if (strcmp(state->temp_sensor_name, obsd->temp_sensor->name)) {
+		/* sensor was changed on the fly... */
+		struct temp_sensor *tsens;
+
+		tsens = find_temperature_sensor(state->temp_sensor_name);
+		if (tsens)
+			obsd->temp_sensor = tsens;
+		else {
+			syslog(LOG_ERR, "invalid temp sensor name '%s'",
+				state->temp_sensor_name);
+			free(state->temp_sensor_name);
+			state->temp_sensor_name =
+				strdup(obsd->temp_sensor->name);
+		}
+	}
+	state->temperature = obsd->temp_sensor->val;
 }
 
 void

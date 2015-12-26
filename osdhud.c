@@ -443,7 +443,7 @@ display_temperature(struct osdhud_state *state)
 	float percent = safe_percent(state->temperature,state->max_temperature);
 
 	xosd_display(osd_to_use(state,1,percent),0,XOSD_printf,
-		     "temp: %.2f degC (%s)", state->temperature,
+		     "temp: %.0f degC (%s)", state->temperature,
 		     state->temp_sensor_name);
 	xosd_display(osd_to_use(state,1,percent),0,XOSD_percentage,
 		     ipercent(percent));

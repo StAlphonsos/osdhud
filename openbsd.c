@@ -386,16 +386,13 @@ probe_init(struct osdhud_state *state)
 	obsd->drive_names_raw = NULL;
 	obsd->drive_names_raw_size = 0;
 
+	obsd->temp_sensor = NULL;
 	load_temperature_sensors();
 	if (n_temp_sensors) {
-		if (state->temp_sensor_name == NULL) {
-			/* Pick the first one */
-			obsd->temp_sensor = SLIST_FIRST(&temp_sensors);
-			state->temp_sensor_name =
-				strdup(obsd->temp_sensor->name);
-		} else {
-			struct temp_sensor *tsens;
+		struct temp_sensor *tsens;
 
+		tsens = SLIST_FIRST(&temp_sensors);
+		if (state->temp_sensor_name != NULL) {
 			tsens = find_temperature_sensor(
 				state->temp_sensor_name);
 			if (tsens == NULL) {
@@ -403,10 +400,12 @@ probe_init(struct osdhud_state *state)
 				syslog(LOG_ERR, "invalid temp sensor '%s'"
 				       " - using '%s' instead",
 				       state->temp_sensor_name, tsens->name);
-				obsd->temp_sensor = tsens;
-				state->temp_sensor_name = strdup(tsens->name);
 			}
 		}
+		obsd->temp_sensor = tsens;
+		if (state->temp_sensor_name)
+			free(state->temp_sensor_name);
+		state->temp_sensor_name = strdup(tsens->name);
 	}
 
 	state->per_os_data = (void *)obsd;

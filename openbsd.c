@@ -403,8 +403,7 @@ probe_init(struct osdhud_state *state)
 			}
 		}
 		obsd->temp_sensor = tsens;
-		if (state->temp_sensor_name)
-			free(state->temp_sensor_name);
+		free(state->temp_sensor_name);
 		state->temp_sensor_name = strdup(tsens->name);
 	}
 

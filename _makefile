@@ -32,7 +32,7 @@ DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
 DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc $(MANPAGE)
 
-default: help
+default: all
 
 help::
 	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < _makefile

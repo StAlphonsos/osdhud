@@ -68,14 +68,14 @@ man-page:: $(MANPAGE)
 $(MANPAGE):: $(MANSRC) VERSION
 	$(MANIFY) < $(MANSRC) > $(MANPAGE)
 
-WEBFILES?=web/osdhud.html web/osdhud.pdf
+WEBFILES=web/osdhud.html web/osdhud.pdf
 
 web: $(WEBFILES)
 
 web/osdhud.html: osdhud.1
 	$(MANDOC) -T html osdhud.1 > $@
 
-web/osdhud.pdf: osdhud.mandoc
+web/osdhud.pdf: osdhud.1
 	$(MANDOC) -T pdf osdhud.1 > $@
 
 osdhud.o: osdhud.c osdhud.h movavg.h config.h version.h

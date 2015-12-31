@@ -735,6 +735,7 @@ probe_net(struct osdhud_state *state)
 	os_data->nifs = nifs;
 }
 
+#if 0
 /* Many clues taken from /usr/src/usr.bin/vmstat/dkstats.c */
 /* XXX incomplete */
 void
@@ -800,15 +801,18 @@ probe_disk(struct osdhud_state *state)
 				*name = '\0';
 			/* Jump to next name */
 			name = strsep(&bufpp,",");
+#ifdef DEBUG
 #define dd(nn) d->ds_##nn
 			VSPEW("disk#%d: %s rxfer=%llu wxfer=%llu seek=%llu"
 			      " rbytes=%llu wbyes=%llu",i,obsd->drive_names[i],
 			      dd(rxfer),dd(wxfer),dd(seek),dd(rbytes),
 			      dd(wbytes));
 #undef dd
+#endif
 		}
 	}
 }
+#endif
 
 /* c.f. apm(4) */
 void

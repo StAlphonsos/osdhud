@@ -247,7 +247,7 @@ probe(struct osdhud_state *state)
 	probe_mem(state);
 	probe_swap(state);
 	probe_net(state);
-	probe_disk(state);
+	/*probe_disk(state);*/
 	probe_battery(state);
 	probe_temperature(state);
 	probe_uptime(state);
@@ -1075,6 +1075,8 @@ handle_message(struct osdhud_state *state)
 				setparam(long_pause_msecs,"%d");
 				maybe_setstrparam(font);
 				maybe_setstrparam(time_fmt);
+				maybe_setstrparam(temp_sensor_name);
+				setparam(max_temperature,"%f");
 				maybe_setstrparam2(net_iface,
 						   clear_net_info(state));
 
@@ -1286,6 +1288,10 @@ pack_message(struct osdhud_state *state, char **out_msg)
 		len += 4 + strlen(state->font);
 	if (state->net_iface)
 		len += 4 + strlen(state->net_iface);
+	if (state->temp_sensor_name)
+		len += 4 + strlen(state->temp_sensor_name);
+	if (state->max_temperature)
+		len += 10;
 	if (state->pos_x != DEFAULT_POS_X)
 		len += 10;
 	if (state->pos_y != DEFAULT_POS_Y)
@@ -1320,6 +1326,14 @@ pack_message(struct osdhud_state *state, char **out_msg)
 		off += x;						\
 		left -= x;						\
 	} while (0);
+#define float_opt(f,o)							\
+	do  {								\
+		int x=snprintf(&packed[off],left,"%s-%s %f",lead,o,state->f); \
+		if (x < 0)						\
+			die(state,"pack: " o " failed !?");		\
+		off += x;						\
+		left -= x;						\
+	} while (0);
 #define string_opt(f,o)                                                 \
 	if (state->f) {							\
 		int x=snprintf(&packed[off],left,"%s-%s %s",lead,o,state->f); \
@@ -1348,9 +1362,12 @@ pack_message(struct osdhud_state *state, char **out_msg)
 	integer_opt(display_msecs,"d");
 	integer_opt(short_pause_msecs,"p");
 	integer_opt(long_pause_msecs,"P");
+	string_opt(temp_sensor_name,"m");
+	float_opt(max_temperature,"M");
 
 #undef string_opt
 #undef integer_opt
+#undef float_opt
 #undef single_opt
 
 	assert_strlcat_z(&packed[off],"\n",left);

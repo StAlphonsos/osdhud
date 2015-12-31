@@ -256,7 +256,7 @@ void probe_load(struct osdhud_state *);
 void probe_mem(struct osdhud_state *);
 void probe_swap(struct osdhud_state *);
 void probe_net(struct osdhud_state *);
-void probe_disk(struct osdhud_state *);
+/*void probe_disk(struct osdhud_state *);*/ /* XXX not yet */
 void probe_battery(struct osdhud_state *);
 void probe_temperature(struct osdhud_state *);
 void probe_uptime(struct osdhud_state *);

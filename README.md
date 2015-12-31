@@ -100,4 +100,4 @@ when `osdhud.1` (the final man page) is generated.
 
 It seems _de rigueur_ to provide a screenshot:
 
-![osdhud 0.1.6 (not yet released)](osdhud-screencap-small.png)
+![osdhud 0.1.6 (not yet released)](web/osdhud-screencap-small.png)

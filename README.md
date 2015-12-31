@@ -91,8 +91,10 @@ display use the `-n` option; this can be useful in your `~/.xinitrc`
 or similar script if you don't want the HUD to come up for a few
 seconds when you start X windows.
 
-More details on the options and usage can be found in the man page.
-The source file is `osdhud.mandoc`.  I run it through my Perl
+More details on the options and usage can be found in the man page; I
+keep copies in [pdf](web/osdhud.pdf) and [html](web/osdhud.html)
+synced with the source in OpenBSD's wonderful [mandoc](osdhud.mandoc)
+semantic markup format for documentation.  I run it through my Perl
 `@variable@` expander (`generic/suss.pl`) to get `@VERSION@` expanded
 when `osdhud.1` (the final man page) is generated.
 
@@ -101,6 +103,11 @@ when `osdhud.1` (the final man page) is generated.
 It seems _de rigueur_ to provide a screenshot:
 
 ![osdhud 0.1.6 (not yet released)](web/osdhud-screencap-small.png)
+
+This display was produced by `osdhud -t`, which is why it says
+`[-stuck-]` at bottom left.  Without the `-t` the HUD will come up for
+a few seconds and count down how long it will be visible at bottom
+left instead.
 
 Yeah, my poor little Thinkpad T61 (i386) gets a little hot running
 Firefox... s'ok, keeps me honest.

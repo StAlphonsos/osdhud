@@ -101,3 +101,6 @@ when `osdhud.1` (the final man page) is generated.
 It seems _de rigueur_ to provide a screenshot:
 
 ![osdhud 0.1.6 (not yet released)](web/osdhud-screencap-small.png)
+
+Yeah, my poor little Thinkpad T61 (i386) gets a little hot running
+Firefox... s'ok, keeps me honest.

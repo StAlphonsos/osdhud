@@ -21,21 +21,21 @@ S!=pwd
 
 BINARIES=osdhud
 
-MAKESYS?=Makefile settings.mk suss.pl configure
-SUDIRS?=web
-MANSECT?=1
-MANEXT?=$(MANSECT)
+MAKESYS=Makefile settings.mk suss.pl configure
+SUBDIRS=web
+MANSECT=1
+MANEXT=$(MANSECT)
 ## Can be set per-OS
-MANSRC?=osdhud.mandoc
-MANPAGE?=osdhud.$(MANEXT)
-DOCS?=$(MANSRC)
-FILES?=osdhud.c openbsd.c osdhud.h movavg.c movavg.h $(DOCS)
-DIST_NAME?=$(PACKAGE_NAME)
-DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
-DIST_LIST?=VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
-DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
-DIST_TAR_GZ?=$(DIST_TAR).gz
-DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc $(MANPAGE)
+MANSRC=osdhud.mandoc
+MANPAGE=osdhud.$(MANEXT)
+DOCS=$(MANSRC)
+FILES=osdhud.c openbsd.c osdhud.h movavg.c movavg.h $(DOCS)
+DIST_NAME=$(PACKAGE_NAME)
+DIST_TMP=$(DIST_NAME)-$(DIST_VERS)
+DIST_LIST=VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
+DIST_TAR=$(DIST_NAME)-$(DIST_VERS).tar
+DIST_TAR_GZ=$(DIST_TAR).gz
+DOC_EPHEM=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc $(MANPAGE)
 
 default: all
 
@@ -66,7 +66,7 @@ osdhud: osdhud.o movavg.o $(UNAME).o
 ## take the opportunity to see how hard it would be to go the extra
 ## mile to mandoc that is equivalent to the hand-written mandoc file.
 
-MANIFY?=$(SUSS) VERSION=$(VERSION)
+MANIFY=$(SUSS) VERSION=$(VERSION)
 
 man-page:: $(MANPAGE)
 
@@ -114,9 +114,9 @@ checkdist: $(DIST_TMP)
 $(DIST_TAR): $(DIST_TMP)
 	$(TAR_CF) $(DIST_TAR) $(DIST_TMP)
 
-$(DIST_TAR_GZ): $(DIST_TAR)
-	$(GZIP) $(DIST_TAR)
+${DIST_TAR_GZ}: ${DIST_TAR}
+	${GZIP} ${DIST_TAR}
 
-$(DIST_TMP):
-	$(MKDIR) -p $(DIST_TMP)
-	($(TAR_CF) - $(DIST_LIST)) | (cd $(DIST_TMP); $(TAR_XF) -)
+${DIST_TMP}:
+	${MKDIR} -p ${DIST_TMP}
+	tar -cf - ${DIST_LIST} | tar -C ${DIST_TMP} -xf -

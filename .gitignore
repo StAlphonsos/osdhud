@@ -5,3 +5,6 @@ osdhud
 version.h
 config.h
 config.mk
+ktrace.*
+*.core
+*.out

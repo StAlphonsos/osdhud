@@ -19,21 +19,33 @@
 # PERFORMANCE OF THIS SOFTWARE.
 ##
 prefix=${PREFIX-/usr/local}
+debugging=""
+
 while [ $# -gt 0 ]; do
-  arg=$1
-  shift
-  case $arg in
-    --prefix=*)
-      prefix=`echo $arg | sed -e 's/^--prefix=//'`
-      echo $0: prefix is now $prefix
-      ;;
-    *)
-      echo $0: unrecognized configure argument ignored: $arg
-      ;;
-  esac
+    arg=$1
+    shift
+    case $arg in
+        --prefix=*)
+            prefix=`echo $arg | sed -e 's/^--prefix=//'`
+            echo $0: prefix is now $prefix
+            ;;
+        --debug)
+            debugging="DEBUG_CFLAGS=-DDEBUG"
+            ;;
+        --help)
+            echo 'usage: ./configure [--prefix=dir] [--debug]'
+            exit 1
+            ;;
+        *)
+            echo "$0: unrecognized argument ignored: $arg"
+            ;;
+    esac
 done
+
 echo PREFIX=${prefix} > config.mk
+[ -n "${debugging}" ] && echo "${debugging}" >> config.mk
 echo "$0: wrote config.mk"
+
 wordsize=`perl -MConfig -e 'printf("%d\n",$Config{longsize}*8)'`
 perl ./suss.pl -file=config.h WORDSIZE=$wordsize
 echo "$0: wrote config.h"

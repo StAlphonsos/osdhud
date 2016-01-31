@@ -71,7 +71,7 @@ err_str(struct osdhud_state *state, int err)
 	return state->errbuf;
 }
 
-void
+__dead void
 die(struct osdhud_state *state, char *msg)
 {
 	if (state->foreground)
@@ -1676,9 +1676,25 @@ main(int argc, char **argv)
 	init_state(&state,argv[0]);
 	if (parse(&state,argc,argv))
 		exit(1);  /* already complained to stderr */
-#ifdef HAVE_SETPROCTITLE
-	setproctitle("v.%s",VERSION);
+
+#if 0
+	/*
+	 * Not ready for prime time yet, still looking in to how to
+	 * approach pledging programs like this e.g. systat, which is
+	 * also not pledged yet.  Need to understand where the
+	 * prot_exec is coming from... These pledge calls don't work,
+	 * we die in sysctl somewhere.
+	 */
+	if (state.foreground) {
+		if (pledge("stdio rpath cpath dpath unix vminfo ps route fattr prot_exec", NULL))
+			err(1,"osdhud: pledge (foreground)");
+	} else {
+		if (pledge("stdio rpath cpath dpath unix vminfo ps route proc fattr prot_exec", NULL))
+			err(1,"osdhud: pledge");
+	}
 #endif
+
+	setproctitle("v.%s",VERSION);
 	/* Setup unix-domain socket address for use below */
 	if (!state.sock_path) {
 		char *home = getenv("HOME");

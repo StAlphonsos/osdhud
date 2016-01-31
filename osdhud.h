@@ -18,10 +18,6 @@
 
 /* Data structures and macros for osdhud */
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__)
-# define HAVE_SETPROCTITLE 1
-#endif
-
 #define SECSPERMIN      60
 #define SECSPERHOUR     (SECSPERMIN*60)
 #define SECSPERDAY      (SECSPERHOUR*24)

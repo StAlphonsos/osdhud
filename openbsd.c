@@ -212,6 +212,17 @@ static struct { int bits; int mbit_sec; } media_speeds[] = {
 	{ 0,                          10 }, /* default for the 1st world :-) */
 };
 
+static
+int my_sysctl(const char *desc, const int *mib, u_int miblen,
+	      void *oldp, size_t *oldlenp, void *newp, size_t newlen)
+{
+#ifdef DEBUG
+	syslog(LOG_WARNING, "calling sysctl(%s) %d: %d %d %d %d %d",
+	       desc, miblen, mib[0], mib[1], mib[2], mib[3], mib[4]);
+#endif
+	return sysctl(mib, miblen, oldp, oldlenp, newp, newlen);
+}
+
 /* For the temperature probe */
 
 SLIST_HEAD(, temp_sensor) temp_sensors;
@@ -241,7 +252,7 @@ load_temperature_sensors()
 	tail = NULL;
 	for (dev = 0; ; dev++) {
 		mib[2] = dev;
-		if (sysctl(mib, 3, &snsrdev, &sdlen, NULL, 0) == -1) {
+		if (my_sysctl("sensor1",mib,3,&snsrdev,&sdlen,NULL,0) == -1) {
 			if (errno == ENXIO)
 				continue;
 			if (errno == ENOENT)
@@ -250,7 +261,7 @@ load_temperature_sensors()
 		mib[3] = SENSOR_TEMP;
 		for (numt = 0; numt < snsrdev.maxnumt[mib[3]]; numt++){
 			mib[4] = numt;
-			if (sysctl(mib, 5, &snsr, &slen, NULL, 0) == -1)
+			if (my_sysctl("sensor2",mib,5,&snsr,&slen,NULL,0) == -1)
 				continue;
 			if (slen && !(snsr.flags & SENSOR_FINVALID)) {
 				struct temp_sensor *s;
@@ -299,7 +310,7 @@ update_temperature_sensors()
 	size_t slen = sizeof(snsr);
 
 	SLIST_FOREACH(s, &temp_sensors, entries) {
-		if (sysctl(s->mib, 5, &snsr, &slen, NULL, 0) == -1)
+		if (my_sysctl("temp",s->mib, 5, &snsr, &slen, NULL, 0) == -1)
 			continue;
 		s->val = (snsr.value - 273150000) / 1000000.0;
 	}
@@ -360,7 +371,7 @@ probe_init(struct osdhud_state *state)
 	obsd->pageshift -= LOG1024;
 
 	size = sizeof(obsd->boottime);
-	assert(!sysctl(mib,2,&obsd->boottime,&size,NULL,0));
+	assert(!my_sysctl("boottime",mib,2,&obsd->boottime,&size,NULL,0));
 
 	if (!state->nswap)
 		obsd->swap_devices = NULL;
@@ -374,7 +385,7 @@ probe_init(struct osdhud_state *state)
 	mib[1] = HW_NCPU;
 	size = sizeof(obsd->ncpus);
 	obsd->ncpus = 0;
-	assert(!sysctl(mib,2,&obsd->ncpus,&size,NULL,0));
+	assert(!my_sysctl("ncpus",mib,2,&obsd->ncpus,&size,NULL,0));
 	if (!state->max_load_avg)
 		state->max_load_avg = 2.0 * (float)obsd->ncpus; /* xxx 2? */
 	VSPEW("ncpus=%d, max load avg=%f",obsd->ncpus,state->max_load_avg);
@@ -464,7 +475,7 @@ probe_mem(struct osdhud_state *state)
 	float tot_kbytes, act_kbytes;
 
 	size = sizeof(vmtotal);
-	if (sysctl(vmtotal_mib,ARRAY_SIZE(vmtotal_mib),&vmtotal,&size,NULL,0)) {
+	if (my_sysctl("vmmeter",vmtotal_mib,ARRAY_SIZE(vmtotal_mib),&vmtotal,&size,NULL,0)) {
 		SPEWE("sysctl");
 		memset(&vmtotal,0,sizeof(vmtotal));
 	}
@@ -598,7 +609,7 @@ probe_net(struct osdhud_state *state)
 	 */
 
 	/* Ask how much space will be needed for the whole array */
-	if (sysctl(mib,ARRAY_SIZE(mib),NULL,&need,NULL,0) < 0) {
+	if (my_sysctl("net1",mib,ARRAY_SIZE(mib),NULL,&need,NULL,0) < 0) {
 		SPEWE("sysctl(IFLIST)");
 		return;
 	}
@@ -608,7 +619,7 @@ probe_net(struct osdhud_state *state)
 		return;
 	}
 	/* Now get them */
-	if (sysctl(mib,ARRAY_SIZE(mib),buf,&need,NULL,0) < 0) {
+	if (my_sysctl("net2",mib,ARRAY_SIZE(mib),buf,&need,NULL,0) < 0) {
 		SPEWE("sysctl(IFLIST#2)");
 		return;
 	}
@@ -750,7 +761,7 @@ probe_disk(struct osdhud_state *state)
 	mib[0] = CTL_HW;
 	mib[1] = HW_DISKCOUNT;
 	size = sizeof(ndrive);
-	assert(!sysctl(mib,2,&ndrive,&size,NULL,0));
+	assert(!my_sysctl("disk",mib,2,&ndrive,&size,NULL,0));
 	assert(ndrive);                    /* ... otherwise, ? */
 	/* Get ready to acquire data */
 	if (ndrive != obsd->ndrive) {
@@ -770,17 +781,17 @@ probe_disk(struct osdhud_state *state)
 	assert(obsd->drive_stats);
 	memset(obsd->drive_stats,0,size);
 	mib[1] = HW_DISKSTATS;
-	assert(!sysctl(mib,2,obsd->drive_stats,&size,NULL,0));
+	assert(!my_sysctl("disk2",mib,2,obsd->drive_stats,&size,NULL,0));
 	/* Get drive names (raw list, comma-sep) */
 	size = 0;
 	mib[1] = HW_DISKNAMES;
-	assert(!sysctl(mib,2,NULL,&size,NULL,0));
+	assert(!my_sysctl("disk3",mib,2,NULL,&size,NULL,0));
 	if (obsd->drive_names_raw_size != size)
 		obsd->drive_names_raw = realloc(obsd->drive_names_raw,size);
 	assert(obsd->drive_names_raw);
 	obsd->drive_names_raw_size = size;
 	memset(obsd->drive_names_raw,0,size);
-	assert(!sysctl(mib,2,obsd->drive_names_raw,&size,NULL,0));
+	assert(!my_sysctl("disk4",mib,2,obsd->drive_names_raw,&size,NULL,0));
 	/* Make sure there is space to store drive name pointers */
 	if (!obsd->drive_names)
 		obsd->drive_names = calloc(obsd->ndrive,sizeof(char *));

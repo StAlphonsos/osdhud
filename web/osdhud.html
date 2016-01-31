@@ -28,9 +28,9 @@ OSDHUD(1)</td>
 </tbody>
 </table>
 <div class="section">
-<h1 id="x4e414d45">NAME</h1> <b class="name">osdhud</b> &#8212; <span class="desc">heads-up system status display for X11</span></div>
+<h1 id="NAME">NAME</h1> <b class="name">osdhud</b> &#8212; <span class="desc">heads-up system status display for X11</span></div>
 <div class="section">
-<h1 id="x53594e4f50534953">SYNOPSIS</h1><table class="synopsis">
+<h1 id="SYNOPSIS">SYNOPSIS</h1><table class="synopsis">
 <col style="width: 6.00ex;"/>
 <col/>
 <tbody>
@@ -44,10 +44,10 @@ OSDHUD(1)</td>
 </table>
 </div>
 <div class="section">
-<h1 id="x4445534352495054494f4e">DESCRIPTION</h1> <b class="name">osdhud</b> provides a heads-up display style view of the activity on your local machine.  It uses the <a class="link-man">xosd(3)</a> library to create a transparent window with an on screen-display that appears to float over whatever else is displayed.<div class="spacer">
+<h1 id="DESCRIPTION">DESCRIPTION</h1> <b class="name">osdhud</b> provides a heads-up display style view of the activity on your local machine.  It uses the <a class="link-man">xosd(3)</a> library to create a transparent window with an on screen-display that appears to float over whatever else is displayed.<div class="spacer">
 </div>
 <b class="name">osdhud</b> normally runs as a daemon and listens on a Unix-domain socket in your home directory for commands.  When first started it will fork a daemon child if it cannot make contact with an existing daemon via the socket.  The daemon gathers statistics in the background and responds to commands on its socket.  You can disable the daemon by running <b class="name">osdhud</b> in the foreground via the <b class="flag">-F</b> option.  When run in the foreground any output from <b class="name">osdhud</b> goes to stderr.  Otherwise the <b class="name">osdhud</b> daemon will log to <a class="link-man">syslog</a> once daemonized and to stderr if it encounters an error before daemonizing.<div class="subsection">
-<h2 id="x5553414745">USAGE</h2> Normally, <b class="name">osdhud</b> is started as a part of your X session.  For instance addining the following lines to your <i class="file">~/.xinitrc</i> file:<pre style="margin-left: 5.00ex;" class="lit display">
+<h2 id="USAGE">USAGE</h2> Normally, <b class="name">osdhud</b> is started as a part of your X session.  For instance addining the following lines to your <i class="file">~/.xinitrc</i> file:<pre style="margin-left: 5.00ex;" class="lit display">
 osdhud -Cwn -i egress</pre>
 will start the <b class="name">osdhud</b> daemon watching interfaces in the group, will not show swap statistics, will show the display countdown and will not display anything when it starts up.  Running<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
 <div class="display">
@@ -67,7 +67,7 @@ will first bring the HUD up and then increase the amount of time it remains visi
 </blockquote>
 </div>
 <div class="subsection">
-<h2 id="x4f5054494f4e53">OPTIONS</h2><dl style="margin-top: 0.00em;margin-bottom: 0.00em;" class="list list-tag">
+<h2 id="OPTIONS">OPTIONS</h2><dl style="margin-top: 0.00em;margin-bottom: 0.00em;" class="list list-tag">
 <dt class="list-tag" style="margin-top: 1.00em;">
 <b class="flag">-v</b></dt>
 <dd class="list-tag" style="margin-left: 6.00ex;">
@@ -168,18 +168,18 @@ Specify the maximum temperature that should ever be seen, in Celsius; the defaul
 </div>
 </div>
 <div class="section">
-<h1 id="x46494c4553">FILES</h1> <i class="file">~/.osdhud_0.1.6</i> Unix-domain socket used by <b class="name">osdhud</b> for communication with the daemon.</div>
+<h1 id="FILES">FILES</h1> <i class="file">~/.osdhud_0.1.6</i> Unix-domain socket used by <b class="name">osdhud</b> for communication with the daemon.</div>
 <div class="section">
-<h1 id="x53454520414c534f">SEE ALSO</h1> <a class="link-man">sysctl(3)</a> <a class="link-man">ioctl(2)</a> <a class="link-man">ifconfig(8)</a> <a class="link-man">xosd(3)</a></div>
+<h1 id="SEE_ALSO">SEE ALSO</h1> <a class="link-man">sysctl(3)</a> <a class="link-man">ioctl(2)</a> <a class="link-man">ifconfig(8)</a> <a class="link-man">xosd(3)</a></div>
 <div class="section">
-<h1 id="x415554484f5253">AUTHORS</h1> attila &lt;attila@stalphonsos.com&gt;</div>
+<h1 id="AUTHORS">AUTHORS</h1> attila &lt;attila@stalphonsos.com&gt;</div>
 <table class="foot">
 <tbody>
 <tr>
 <td class="foot-date">
-December 31, 2015</td>
+January 31, 2016</td>
 <td class="foot-os">
-OpenBSD 5.8</td>
+OpenBSD 5.9</td>
 </tr>
 </tbody>
 </table>

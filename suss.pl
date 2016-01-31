@@ -132,8 +132,8 @@ sub suss {
             my $var = '@' . $sub->[0] . '@';
             my $val = $sub->[1];
             $line =~ s/$var/$val/g;
-            $out->print($line);
         }
+        $out->print($line);
     }
     $in->close();
     $out->close();

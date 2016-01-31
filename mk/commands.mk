@@ -1,5 +1,11 @@
 # -*- makefile -*-
+##
+# BSD command defaults
+##
 
+INSTALL?=install -vC
+INSTALL_D?=install -d
+MANDOC?=mandoc
 ECHO?=echo
 SED?=sed
 CAT?=cat
@@ -12,7 +18,7 @@ TAR_XF?=$(TAR) xf
 GZIP?=gzip
 MKDIR?=mkdir
 MKDIR_P?=$(MKDIR) -p
-SUSS?=$(S)/generic/suss.pl
+SUSS?=./suss.pl
 INSTALL?=install
 INSTALL_X?=$(INSTALL)
 INSTALL_D?=$(INSTALL) -d

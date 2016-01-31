@@ -5,4 +5,3 @@ osdhud
 version.h
 config.h
 config.mk
-Makefile

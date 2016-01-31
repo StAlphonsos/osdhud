@@ -34,15 +34,5 @@ while [ $# -gt 0 ]; do
 done
 echo PREFIX=${prefix} > config.mk
 wordsize=`perl -MConfig -e 'printf("%d\n",$Config{longsize}*8)'`
-./generic/suss.pl -file=config.h WORDSIZE=$wordsize
+perl ./suss.pl -file=config.h WORDSIZE=$wordsize
 echo "$0: wrote config.h"
-variant=BSD
-(make -v 2>&1 | grep -s GNU) && variant=GNU
-mfile=${variant}makefile
-[ ! -f $mfile ] && {
-    echo "$0: no makefile $mfile"
-    exit 1
-}
-[ -f Makefile ] && rm Makefile
-ln -s $mfile Makefile
-echo "$0: configured for $variant"

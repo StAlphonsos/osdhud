@@ -3,7 +3,11 @@
 # osdhud settings on BSD systems
 ##
 
-.include "$(S)/generic/settings.mk"
+#PREFIX?=/usr/local
+
+BINDIR?=$(PREFIX)/bin
+LIBDIR?=$(PREFIX)/lib
+MANDIR?=$(PREFIX)/man
 
 VERSION!=cat $(S)/VERSION
 UNAME!=uname | tr A-Z a-z

@@ -2,21 +2,25 @@
 
 **N.B.**: Please read [the wiki node](http://traq.haqistan.net/wiki/osdhud) for the most up-to-date information including links to source tarballs
 
-`osdhud` is a heads-up display (HUD) for X windows.  It uses the xosd
-library to draw its display over everything else and is designed to be
-trivial to integrate into whatever desktop environment you use.  That
-much said, I use
+`osdhud` is a heads-up display (HUD) for X windows on OpenBSD.  It
+uses the xosd library to draw its display over everything else and is
+designed to be trivial to integrate into whatever desktop environment
+you use.  That much said, I use
 [cwm](https://en.wikipedia.org/wiki/Cwm_%28window_manager%29) under
 [OpenBSD](http://www.openbsd.org) and find it meshes perfectly with
 the minimalist desktop: no fixed screen real-estate dedicated to
 gauges, widgets or crud.  If you want to know what's going on in your
-machine, hit a key.  If you want to know more there's always `xterm -e systat` :-).
+machine, hit a key.  If you want to know more there's always `xterm -e
+systat` :-).
 
 At the moment it only works under OpenBSD.  It was originally written
 under FreeBSD but has evolved substantially since then (as, I'm sure,
-has FreeBSD).  Linux is a totally different kettle of fish and is
-unsupported at the moment but should be relatively easy to do if
-anyone cares.
+has FreeBSD).  It does not use external programs to gather data, but
+rather uses the appropriate APIs as per examples in various system
+programs.  This keeps it relatively lightweight.  The xosd library is
+sadly not the most flexible or performant - on a machine with
+poorly-supported graphics and a slow CPU the display might be a little
+slow.
 
 ## Administrivia
 
@@ -29,24 +33,27 @@ you want to collaborate.
 
 ## Building and Installing
 
-There is a simple `configure` shell script at top level.  It mainly
-fixes up a few things depending on the variety of `make` you have;
-since `osdhud` is still an OpenBSD-only program, this is kind of dumb
-but at some point it might be ported to other BSDs or Linux... who
-knows.  In any event, the sequence is the usual:
+There is a simple `configure` shell script at top level.  It just
+generates config.mk (which is optional) and config.h.  The sequence is
+the usual:
 ```
-  $ ./configure
-  $ make
-  $ doas make install
+$ ./configure
+$ make
+$ doas make install
 ```
 
 This will install `osdhud` in `/usr/local/bin/` and `osdhud.1` in
 `/usr/local/man/man1`.  You can specicy an alternate installation
 prefix via the `PREFIX` make variable, e.g.:
 ```
-  $ make PREFIX=$HOME install
+$ make PREFIX=$HOME install
 ```
 will install `osdhud` into `~/bin` and `osdhud.1` into `~/man/man1`.
+You can also do:
+```
+$ ./configure --prefix=$HOME
+```
+to the same effect.
 
 The `help` target gives a brief usage message for the `Makefile`:
 ```
@@ -84,12 +91,10 @@ complete information):
 The first time osdhud is invoked it will daemonize itself and listen
 on a Unix-domain socket; by default it lives in your home directory.
 We do this so that osdhud can keep running statistics on things like
-network utilization in the background.  Obviously these statistics get
-better the longer osdhud runs (although at the moment I don't do too
-much of that).  If you want to start osdhud without bringing up the
-display use the `-n` option; this can be useful in your `~/.xinitrc`
-or similar script if you don't want the HUD to come up for a few
-seconds when you start X windows.
+network utilization in the background.  If you want to start osdhud
+without bringing up the display use the `-n` option; this can be
+useful in your `~/.xinitrc` or similar script if you don't want the
+HUD to come up for a few seconds when you start X windows.
 
 More details on the options and usage can be found in the man page; I
 keep copies in [pdf](web/osdhud.pdf) and [html](web/osdhud.html)

@@ -26,7 +26,7 @@ INSTALL_X?=$(INSTALL)
 INSTALL_D?=$(INSTALL) -d
 
 # this is in config.mk
-#PREFIX?=/usr/local
+PREFIX?=/usr/local
 
 BINDIR?=$(PREFIX)/bin
 LIBDIR?=$(PREFIX)/lib

@@ -565,6 +565,8 @@ usage(struct osdhud_state *state, char *msg)
 		syslog(LOG_WARNING,"client message error: %s",msg);
 		fail = 1;
 	} else {
+		int exit_code = 1;
+
 		if (msg)
 			fprintf(stderr,"%s ERROR: %s\n",state->argv0,msg);
 		else {
@@ -572,8 +574,9 @@ usage(struct osdhud_state *state, char *msg)
 				state->argv0,VERSION);
 			fprintf(stderr,USAGE_MSG,state->argv0,
 				state->argv0,VERSION);
+			exit_code = 0;
 		}
-		exit(1);
+		exit(exit_code);
 	}
 	return fail;
 }

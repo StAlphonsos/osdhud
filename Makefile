@@ -14,12 +14,14 @@ PACKAGE_NAME!=cat PACKAGE
 DIST_VERS!=cat VERSION
 S!=pwd
 
-.include "config.mk"
+.if exists(config.mk)
+.  include "config.mk"
+.endif
 .include "settings.mk"
 
 BINARIES=osdhud
 
-MAKESYS?=Makefile mk configure
+MAKESYS?=Makefile settings.mk suss.pl configure
 SUDIRS?=
 MANSECT?=1
 MANEXT?=$(MANSECT)
@@ -27,7 +29,7 @@ MANEXT?=$(MANSECT)
 MANSRC?=osdhud.mandoc
 MANPAGE?=osdhud.$(MANEXT)
 DOCS?=$(MANSRC)
-FILES?=osdhud.c openbsd.c osdhud.h $(DOCS)
+FILES?=osdhud.c openbsd.c osdhud.h movavg.c movavg.h $(DOCS)
 DIST_NAME?=$(PACKAGE_NAME)
 DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
 DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
@@ -38,7 +40,7 @@ DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out REA
 default: all
 
 help::
-	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < _makefile
+	@$(SED) -e '1,/^##+/d' -e '/^##-/,$$d' -e 's/^# //' < Makefile
 	@$(ECHO) Install prefix: $(PREFIX) '(override with PREFIX=... on command-line)'
 	@$(ECHO) '    bin dir: ' $(BINDIR)
 	@$(ECHO) '    man dir: ' $(MANDIR)
@@ -106,6 +108,9 @@ distclean:: clean
 
 dist: distclean $(DIST_TAR_GZ)
 
+checkdist: $(DIST_TMP)
+	(cd $(DIST_TMP); ./configure && $(MAKE) $(MFLAGS) && ./osdhud -h && $(MAKE) $(MFLAGS) distclean)
+
 $(DIST_TAR): $(DIST_TMP)
 	$(TAR_CF) $(DIST_TAR) $(DIST_TMP)
 
@@ -115,4 +120,3 @@ $(DIST_TAR_GZ): $(DIST_TAR)
 $(DIST_TMP):
 	$(MKDIR) -p $(DIST_TMP)
 	($(TAR_CF) - $(DIST_LIST)) | (cd $(DIST_TMP); $(TAR_XF) -)
-

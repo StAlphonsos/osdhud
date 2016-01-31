@@ -10,7 +10,7 @@
 #     dist              cook dist-version.tar.gz tarball
 ##-
 
-PACKAGE_NAME!=cat PACKAGE
+PACKAGE_NAME=osdhud
 DIST_VERS!=cat VERSION
 S!=pwd
 
@@ -22,7 +22,7 @@ S!=pwd
 BINARIES=osdhud
 
 MAKESYS?=Makefile settings.mk suss.pl configure
-SUDIRS?=
+SUDIRS?=web
 MANSECT?=1
 MANEXT?=$(MANSECT)
 ## Can be set per-OS
@@ -32,7 +32,7 @@ DOCS?=$(MANSRC)
 FILES?=osdhud.c openbsd.c osdhud.h movavg.c movavg.h $(DOCS)
 DIST_NAME?=$(PACKAGE_NAME)
 DIST_TMP?=$(DIST_NAME)-$(DIST_VERS)
-DIST_LIST?=PACKAGE VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
+DIST_LIST?=VERSION *.md *.in $(MAKESYS) $(SUBDIRS) $(FILES)
 DIST_TAR?=$(DIST_NAME)-$(DIST_VERS).tar
 DIST_TAR_GZ?=$(DIST_TAR).gz
 DOC_EPHEM?=README.aux README.glo README.idx README.ist README.log README.out README.tex README.pdf README.toc $(MANPAGE)

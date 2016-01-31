@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2004 Markus Friedl <markus@openbsd.org>
- * Copyright (C) 2014,2015 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014-2016 by attila <attila@stalphonsos.com>
  *
  * Permission to use, copy, modify, and distribute this software for
  * any purpose with or without fee is hereby granted, provided that the

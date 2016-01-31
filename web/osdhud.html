@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+table.head, table.foot { width: 100%; }
+td.head-rtitle, td.foot-os { text-align: right; }
+td.head-vol { text-align: center; }
+table.foot td { width: 50%; }
+table.head td { width: 33%; }
+div.spacer { margin: 1em 0; }
+</style>
+<title>
+OSDHUD(1)</title>
+</head>
+<body>
+<div class="mandoc">
+<table class="head">
+<tbody>
+<tr>
+<td class="head-ltitle">
+OSDHUD(1)</td>
+<td class="head-vol">
+General Commands Manual</td>
+<td class="head-rtitle">
+OSDHUD(1)</td>
+</tr>
+</tbody>
+</table>
+<div class="section">
+<h1 id="x4e414d45">NAME</h1> <b class="name">osdhud</b> &#8212; <span class="desc">heads-up system status display for X11</span></div>
+<div class="section">
+<h1 id="x53594e4f50534953">SYNOPSIS</h1><table class="synopsis">
+<col style="width: 6.00ex;"/>
+<col/>
+<tbody>
+<tr>
+<td>
+<b class="name">osdhud</b></td>
+<td>
+[<span class="opt"><b class="flag">-vkgtknFDUSNCwh?</b></span>] [<span class="opt"><b class="flag">-T</b> <i class="arg">fmt</i></span>] [<span class="opt"><b class="flag">-d</b> <i class="arg">msec</i></span>] [<span class="opt"><b class="flag">-p</b> <i class="arg">msec</i></span>] [<span class="opt"><b class="flag">-P</b> <i class="arg">msec</i></span>] [<span class="opt"><b class="flag">-f</b> <i class="arg">font</i></span>] [<span class="opt"><b class="flag">-s</b> <i class="arg">path</i></span>] [<span class="opt"><b class="flag">-i</b> <i class="arg">iface</i></span>] [<span class="opt"><b class="flag">-X</b> <i class="arg">mb/s</i></span>] [<span class="opt"><b class="flag">-m</b> <i class="arg">sensor</i></span>] [<span class="opt"><b class="flag">-M</b> <i class="arg">max_temp</i></span>]</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section">
+<h1 id="x4445534352495054494f4e">DESCRIPTION</h1> <b class="name">osdhud</b> provides a heads-up display style view of the activity on your local machine.  It uses the <a class="link-man">xosd(3)</a> library to create a transparent window with an on screen-display that appears to float over whatever else is displayed.<div class="spacer">
+</div>
+<b class="name">osdhud</b> normally runs as a daemon and listens on a Unix-domain socket in your home directory for commands.  When first started it will fork a daemon child if it cannot make contact with an existing daemon via the socket.  The daemon gathers statistics in the background and responds to commands on its socket.  You can disable the daemon by running <b class="name">osdhud</b> in the foreground via the <b class="flag">-F</b> option.  When run in the foreground any output from <b class="name">osdhud</b> goes to stderr.  Otherwise the <b class="name">osdhud</b> daemon will log to <a class="link-man">syslog</a> once daemonized and to stderr if it encounters an error before daemonizing.<div class="subsection">
+<h2 id="x5553414745">USAGE</h2> Normally, <b class="name">osdhud</b> is started as a part of your X session.  For instance addining the following lines to your <i class="file">~/.xinitrc</i> file:<pre style="margin-left: 5.00ex;" class="lit display">
+osdhud -Cwn -i egress</pre>
+will start the <b class="name">osdhud</b> daemon watching interfaces in the group, will not show swap statistics, will show the display countdown and will not display anything when it starts up.  Running<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
+<div class="display">
+<code class="lit">osdhud</code></div>
+</blockquote>
+on the command line or from a key binding will bring the HUD up for the display interval.  Running<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
+<div class="display">
+<code class="lit">osdhud</code></div>
+</blockquote>
+while the HUD is up will increase the display time for the current display; thus by default hitting a key bound to<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
+<div class="display">
+<code class="lit">osdhud</code></div>
+</blockquote>
+will first bring the HUD up and then increase the amount of time it remains visible.  You can force the HUD to disappear with<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
+<div class="display">
+<code class="lit">osdhud -D</code></div>
+</blockquote>
+</div>
+<div class="subsection">
+<h2 id="x4f5054494f4e53">OPTIONS</h2><dl style="margin-top: 0.00em;margin-bottom: 0.00em;" class="list list-tag">
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-v</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Turn up verbosity. <b class="name">osdhud</b> does not normally produce any output other than its display. Increasing verbosity with multiple <b class="flag">-v</b> options will increase the level of log output.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-g</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Turn on debugging, which produces much more copious log output, either to stderr or <a class="link-man">syslog</a></dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-k</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Ask the daemon listening on the Unix-domain socket to shut down (kill itself) and clean up.  The socket will be removed before the daemon exits.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-n</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Do not bring the HUD up when first started.  If this option is not present then <b class="name">osdhud</b> will display the HUD immediately upon daemonizing.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-t</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Tell the daemon to toggle its display regardless of other settings.  If the HUD is not displayed then it will be displayed and &#8220;stuck&#8221; to the screen.  If the HUD is up then it will be brought down. It is useful to bind<blockquote style="margin-top: 0.00em;margin-bottom: 0.00em;">
+<div class="display">
+<code class="lit">osdhud -t</code></div>
+</blockquote>
+to a key in your windowing environment; hitting this key causes the HUD to toggle.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-F</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Force <b class="name">osdhud</b> to run in the foreground and not fork a daemon if needed or talk to an existing daemon.  You can terminate it by hitting ^C.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-D</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Bring the HUD down if it is up.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-U</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Bring the HUD up if it is down.  It will stay up for at least the standard display time (c.f. the <b class="flag">-d</b> option).</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-S</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Stick the HUD to the display: the display time is ignored and the HUD will stay up until some command arrives that has that effect, e.g. the <b class="flag">-D</b>, <b class="flag">-N</b> or <b class="flag">-t</b> options.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-N</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Unstick the display if it is stuck.  The display will fade after however much of the display time that is left has expired.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-C</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Display a countdown of the number of seconds left in the HUD display or the string if the HUD is stuck to the display.  The countdown is displayed in the bottom right corner of the screen when enabled.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-w</b></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Do not display swap statistics.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-h</b> <b class="flag">-</b>?</dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Produce a usage message on stdout and exit.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-T</b> <i class="arg">fmt</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Specify a <a class="link-man">strftime(3)</a> style format string for the date/time display at the bottom of the HUD.  The default is</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-d</b> <i class="arg">msec</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Specify the display time in milliseconds.  The default is 4000 milliseconds (4 seconds).</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-p</b> <i class="arg">msec</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Set the short sampling pause milliseconds.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-P</b> <i class="arg">msec</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Set the long sampling pause in milliseconds.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-f</b> <i class="arg">font</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Set the font used in the HUD display.  The default is</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-s</b> <i class="arg">path</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Set the location of the Unix-domain socket used for communication between the command line and the daemon.  The default is <i class="file">~/.osdhud_0.1.6</i> It is not usually necessary to tweak this but might be if e.g. your home directory is on a remote filesystem.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-i</b> <i class="arg">iface</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Set the network interface being watched by the network statistics gathering code.  Under OpenBSD interface group names can be specified, e.g. in which case interfaces in that group will have their aggregate statistics displayed in the HUD.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-X</b> <i class="arg">mb/s</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Fix our idea of the maximum network bandwidth available in megabits/second.  Must be an integer.  If not specified then <b class="name">osdhud</b> will attempt to automatically guess the maximum speed based on the media flags available from the <code class="lit">SIOCGIFMEDIA</code> option of the <a class="link-man">ioctl(2)</a> system call.  The guess may not be perfect so depending on your networking hardware you might have to use <b class="flag">-X</b> to get the percentage bar display for network utilization to appear in the HUD or to scale properly.  One common situation is when you are directly connected to a network that is much faster than your real uplink to the Internet.  If your LAN is 100mbit but your DSL line can only do 2 mbit/sec, giving a value of 2 for <b class="flag">-X</b> will give you a more realistic display, assuming you care more about connections to the Internet than to your LAN.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-m</b> <i class="arg">sensor</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Specify the full name of the temperature sensor to display; the argument should be the same as the name you would give to the <a class="link-man">sysctl(8)</a> program.  Giving a value of <code class="lit">list</code> will cause <b class="name">osdhud</b> to print out the list of available temperature sensors on the system and their current values.  If <b class="flag">-m</b> is not specified, the first temperature sensor found will be used.</dd>
+<dt class="list-tag" style="margin-top: 1.00em;">
+<b class="flag">-M</b> <i class="arg">maxtemp</i></dt>
+<dd class="list-tag" style="margin-left: 6.00ex;">
+Specify the maximum temperature that should ever be seen, in Celsius; the default is 120 degrees.  This is used to determine the value and color displayed in the temperature graph.</dd>
+</dl>
+</div>
+</div>
+<div class="section">
+<h1 id="x46494c4553">FILES</h1> <i class="file">~/.osdhud_0.1.6</i> Unix-domain socket used by <b class="name">osdhud</b> for communication with the daemon.</div>
+<div class="section">
+<h1 id="x53454520414c534f">SEE ALSO</h1> <a class="link-man">sysctl(3)</a> <a class="link-man">ioctl(2)</a> <a class="link-man">ifconfig(8)</a> <a class="link-man">xosd(3)</a></div>
+<div class="section">
+<h1 id="x415554484f5253">AUTHORS</h1> attila &lt;attila@stalphonsos.com&gt;</div>
+<table class="foot">
+<tbody>
+<tr>
+<td class="foot-date">
+December 31, 2015</td>
+<td class="foot-os">
+OpenBSD 5.8</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>
+

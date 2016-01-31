@@ -16,11 +16,12 @@
 .Op Fl s Ar path
 .Op Fl i Ar iface
 .Op Fl X Ar mb/s
+.Op Fl m Ar sensor
+.Op Fl M Ar max_temp
 .Sh DESCRIPTION
-The
 .Nm
-utility implements a heads-up display style view of the
-activity on your local machine.  It uses the
+provides a heads-up display style view of the activity on your local
+machine.  It uses the
 .Xr xosd 3
 library to create a transparent window with an on screen-display
 that appears to float over whatever else is displayed.
@@ -82,9 +83,9 @@ Turn on debugging, which produces much more copious
 log output, either to stderr or
 .Xr syslog
 .It Fl k
-Ask any daemon that might be listening on the socket to
-shut down (kill itself) and clean up.  The socket will be
-removed before the daemon exits.
+Ask the daemon listening on the Unix-domain socket to shut down (kill
+itself) and clean up.  The socket will be removed before the daemon
+exits.
 .It Fl n
 Do not bring the HUD up when first started.  If this option
 is not present then
@@ -170,16 +171,43 @@ then
 .Nm
 will attempt to automatically guess the maximum speed
 based on the media flags available from the
-.Oq SIOCGIFMEDIA
+.Li SIOCGIFMEDIA
+option of the
 .Xr ioctl 2
-call.  The guess may not be perfect so depending on your
+system call.  The guess may not be perfect so depending on your
 networking hardware you might have to use
 .Fl X
-to get the percentage bar display for network utilization
-to appear in the HUD or to scale properly.
+to get the percentage bar display for network utilization to appear in
+the HUD or to scale properly.  One common situation is when you are
+directly connected to a network that is much faster than your real
+uplink to the Internet.  If your LAN is 100mbit but your DSL line can
+only do 2 mbit/sec, giving a value of 2 for
+.Fl X
+will give you a more realistic display, assuming you care more about
+connections to the Internet than to your LAN.
+.It Fl m Ar sensor
+Specify the full name of the temperature sensor to display; the
+argument should be the same as the name you would give to the
+.Xr sysctl 8
+program.  Giving a value of
+.Li list
+will cause
+.Nm
+to print out the list of available temperature sensors on the
+system and their current values.  If
+.Fl m
+is not specified, the first temperature sensor found will be
+used.
+.It Fl M Ar maxtemp
+Specify the maximum temperature that should ever be seen, in Celsius;
+the default is 120 degrees.  This is used to determine the value
+and color displayed in the temperature graph.
 .El
 .Sh FILES
 .Pa ~/.osdhud_@VERSION@
+Unix-domain socket used by
+.Nm
+for communication with the daemon.
 .Sh SEE ALSO
 .Xr sysctl 3
 .Xr ioctl 2

@@ -9,9 +9,9 @@
 
 /* LICENSE:
  *
- * Copyright (C) 1999-2014 by attila <attila@stalphonsos.com>
+ * Copyright (C) 2014,2015 by attila <attila@stalphonsos.com>
  *
- * Permission to use, copy, modify, and/or distribute this software for
+ * Permission to use, copy, modify, and distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
  * copies.
@@ -115,7 +115,7 @@ void probe_net(
             continue;
         d = &ifmd.ifmd_data;
         if (state->verbose)
-            syslog(LOG_DEBUG,"#%2d/%2d: %s flags=0x%x ipax=%lu ierr=%lu opax=%lu oerr=%lu recv=%lu sent=%lu\n",i,ifcount,ifmd.ifmd_name,ifmd.ifmd_flags,d->ifi_ipackets,d->ifi_ierrors,d->ifi_opackets,d->ifi_oerrors,d->ifi_ibytes,d->ifi_obytes);
+            syslog(LOG_DEBUG,"#%2d/%2d: %s flags=0x%x ipackets=%lu ierr=%lu opackets=%lu oerr=%lu recv=%lu sent=%lu\n",i,ifcount,ifmd.ifmd_name,ifmd.ifmd_flags,d->ifi_ipackets,d->ifi_ierrors,d->ifi_opackets,d->ifi_oerrors,d->ifi_ibytes,d->ifi_obytes);
         if (!state->net_iface) {
             state->net_iface = strdup(ifmd.ifmd_name);
             if (state->verbose)
@@ -132,11 +132,11 @@ void probe_net(
         delta_out = d->ifi_obytes - state->net_tot_obytes;
         state->net_tot_obytes += delta_out;
 
-        delta_pin = d->ifi_ipackets - state->net_tot_ipax;
-        state->net_tot_ipax += delta_pin;
+        delta_pin = d->ifi_ipackets - state->net_tot_ipackets;
+        state->net_tot_ipackets += delta_pin;
 
-        delta_pout = d->ifi_opackets - state->net_tot_opax;
-        state->net_tot_opax += delta_pout;
+        delta_pout = d->ifi_opackets - state->net_tot_opackets;
+        state->net_tot_opackets += delta_pout;
 
         update_net_statistics(state,delta_in,delta_out,delta_pin,delta_pout);
         break;

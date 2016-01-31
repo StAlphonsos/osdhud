@@ -1,15 +1,7 @@
-/* -*- mode:c; c-basic-offset:4; tab-width:4; indent-tabs-mode:nil -*- */
-
-/**
- * @file osdhud.h
- * @brief common definitions for osdhud source code files
- */
-
-/* LICENSE:
+/*
+ * Copyright (C) 2014,2015 by attila <attila@stalphonsos.com>
  *
- * Copyright (C) 2014 by attila <attila@stalphonsos.com>
- *
- * Permission to use, copy, modify, and/or distribute this software for
+ * Permission to use, copy, modify, and distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all
  * copies.
@@ -24,165 +16,130 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef __osdhud_h__
-# define __osdhud_h__
+/* Data structures and macros for osdhud */
 
-#include <assert.h>
-#include <errno.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/stdint.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <syslog.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <time.h>
-#include <sys/resource.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <net/if.h>
-#include <sys/un.h>
-
-#ifdef __FreeBSD__
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
 # define HAVE_SETPROCTITLE 1
 #endif
 
-#ifdef __OpenBSD__
-# define HAVE_SETPROCTITLE 1
-# include <tzfile.h>
-#endif
+#define SECSPERMIN      60
+#define SECSPERHOUR     (SECSPERMIN*60)
+#define SECSPERDAY      (SECSPERHOUR*24)
 
-#include <xosd.h>
-#include <Judy.h>
-
-#include "version.h"
-#define PURPOSE "minmalist heads-up display"
-
-#define SIZEOF_F "%lu"
-#define SIZE_T_F SIZEOF_F
+#define SIZEOF_F "%lu"			/* printf fmt for sizeof() */
+#define SIZE_T_F SIZEOF_F		/* printf fmt for size_t */
 
 #define ARRAY_SIZE(aa) (sizeof(aa)/sizeof(aa[0]))
 #define NULLS(_x_) ((_x_) ? (_x_) : "NULL")
-
-/*
- * A moving average c.f. movavg_* in osdhud.c
- */
-struct movavg {
-    int                 window_size;
-    int                 off;
-    int                 count;
-    float               sum;
-    float              *window;
-};
-
-#define MAX_WSIZE 10000 /* max size of moving average window */
 #define MAX_ALERTS_SIZE 1024
+
+#define NLINES 16
 
 /*
  * Application state
  */
-typedef struct osdhud_state {
-    int                 kill_server:1;
-    int                 down_hud:1;
-    int                 up_hud:1;
-    int                 stick_hud:1;
-    int                 unstick_hud:1;
-    int                 foreground:1;
-    int                 hud_is_up:1;
-    int                 server_quit:1;
-    int                 stuck:1;
-    int                 debug:1;
-    int                 countdown:1;
-    int                 quiet_at_start:1;
-    int                 toggle_mode:1;
-    int                 alerts_mode:1;
-    int                 cancel_alerts:1;
-    char               *argv0;
-    int                 pid;
-    char               *sock_path;
-    struct sockaddr_un  addr;
-    int                 sock_fd;
-    char               *font;
-    char               *net_iface;
-    int                 net_speed_mbits;
-    char               *time_fmt;
-    int                 nswap;
-    int                 min_battery_life;
-    float               max_load_avg;
-    float               max_mem_used;
-    unsigned long       net_tot_ipax;
-    unsigned long       net_tot_ierr;
-    unsigned long       net_tot_opax;
-    unsigned long       net_tot_oerr;
-    unsigned long       net_tot_ibytes;
-    unsigned long       net_tot_obytes;
-    int                 delta_t;
-    int                 pos_x;
-    int                 pos_y;
-    int                 nlines;
-    int                 width;
-    int                 display_msecs;
-    int                 duration_msecs;
-    int                 t0_msecs;
-    int                 short_pause_msecs;
-    int                 long_pause_msecs;
-    int                 net_movavg_wsize;
-    int                 verbose;
-    float               load_avg;
-    void               *per_os_data;
-    struct movavg      *ikbps_ma;
-    float               net_ikbps;
-    struct movavg      *okbps_ma;
-    float               net_okbps;
-    struct movavg      *ipxps_ma;
-    float               net_ipxps;
-    struct movavg      *opxps_ma;
-    float               net_opxps;
-    float               net_peak_kbps;
-    float               net_peak_pxps;
-    struct movavg      *rxdisk_ma;
-    float               disk_rkbps;
-    struct movavg      *wxdisk_ma;
-    float               disk_wkbps;
-    struct movavg      *rbdisk_ma;
-    float               disk_rxps;
-    struct movavg      *wbdisk_ma;
-    float               disk_wxps;
-    float               mem_used_percent;
-    float               swap_used_percent;
-    int                 battery_missing:1;
-    int                 battery_life;
-    char                battery_state[32];
-    int                 battery_time;
-    unsigned long       uptime_secs;
-    unsigned long       last_t;
-    unsigned long       first_t;
-    unsigned long       sys_uptime;
-    int                 message_seen:1;
-    char                message[MAX_ALERTS_SIZE];
-    xosd               *osd;
-    int                 disp_line;
-    xosd               *osd2;
-    char                errbuf[1024];
-} osdhud_state_t;
+struct osdhud_state {
+	int		 kill_server:1;
+	int		 down_hud:1;
+	int		 up_hud:1;
+	int		 stick_hud:1;
+	int		 unstick_hud:1;
+	int		 foreground:1;
+	int		 hud_is_up:1;
+	int		 server_quit:1;
+	int		 stuck:1;
+	int		 debug:1;
+	int		 countdown:1;
+	int		 quiet_at_start:1;
+	int		 toggle_mode:1;
+	int		 alerts_mode:1;
+	int		 cancel_alerts:1;
+	char		*argv0;
+	char		 hostname[128];
+	int		 pid;
+	char		*sock_path;
+	struct		 sockaddr_un addr;
+	int		 sock_fd;
+	char		*font;
+	char		*net_iface;
+	int		 net_speed_mbits;
+	char		*time_fmt;
+	char		*temp_sensor_name;
+	double		 temperature;
+	int		 nswap;
+	int		 min_battery_life;
+	float		 max_load_avg;
+	float		 max_mem_used;
+	float		 max_temperature;
+	u_int64_t	 net_tot_ipackets;
+	u_int64_t	 net_tot_ierr;
+	u_int64_t	 net_tot_opackets;
+	u_int64_t	 net_tot_oerr;
+	u_int64_t	 net_tot_ibytes;
+	u_int64_t	 net_tot_obytes;
+	int		 delta_t;
+	int		 pos_x;
+	int		 pos_y;
+	int		 nlines;
+	int		 line_height;
+	int		 width;
+	int		 display_msecs;
+	int		 duration_msecs;
+	int		 t0_msecs;
+	int		 short_pause_msecs;
+	int		 long_pause_msecs;
+	int		 net_movavg_wsize;
+	int		 verbose;
+	float		 load_avg;
+	void		*per_os_data;
+	struct		 movavg *ikbps_ma;
+	float		 net_ikbps;
+	struct		 movavg *okbps_ma;
+	float		 net_okbps;
+	struct		 movavg *ipxps_ma;
+	float		 net_ipxps;
+	struct		 movavg *opxps_ma;
+	float		 net_opxps;
+	float		 net_peak_kbps;
+	float		 net_peak_pxps;
+	struct		 movavg *rxdisk_ma;
+	float		 disk_rkbps;
+	struct		 movavg *wxdisk_ma;
+	float		 disk_wkbps;
+	struct		 movavg *rbdisk_ma;
+	float		 disk_rxps;
+	struct		 movavg *wbdisk_ma;
+	float		 disk_wxps;
+	float		 mem_used_percent;
+	float		 swap_used_percent;
+	int		 battery_missing:1;
+	int		 battery_life;
+	char		 battery_state[32];
+	int		 battery_time;
+	time_t		 uptime_secs;
+        time_t		 last_t;
+	time_t		 first_t;
+	time_t		 sys_uptime;
+	int		 message_seen:1;
+	char		 message[MAX_ALERTS_SIZE];
+	xosd		*osds[NLINES];
+	int		 disp_line;
+	xosd	        *osd_bot;
+	char		 errbuf[1024];
+};
 
 #define KILO 1024
 #define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
-
-#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
+/* XXX this introduces a dep on fonts/terminus; default should be in base */
+#define DEFAULT_FONT "-xos4-terminus-medium-r-normal--32-320-72-72-c-160-iso8859-1"
+/*#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"*/
 #define DEFAULT_POS_X 10
 #define DEFAULT_POS_Y 48
-#define DEFAULT_NLINES 15
+#define DEFAULT_LINE_HEIGHT 36
 #define DEFAULT_WIDTH 50
-#define DEFAULT_DISPLAY 4000
-#define DEFAULT_SHORT_PAUSE 100
+#define DEFAULT_DISPLAY 2000
+#define DEFAULT_SHORT_PAUSE 80
 /*#define DEFAULT_LONG_PAUSE 1800*/
 #define DEFAULT_LONG_PAUSE DEFAULT_SHORT_PAUSE
 #define DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
@@ -191,6 +148,7 @@ typedef struct osdhud_state {
 #define DEFAULT_MIN_BATTERY_LIFE 10
 #define DEFAULT_MAX_LOAD_AVG 0.0
 #define DEFAULT_MAX_MEM_USED 0.9
+#define DEFAULT_MAX_TEMPERATURE 120
 
 #define DBG1(fmt,arg1)                                                  \
     if (state->debug) {                                                 \
@@ -245,10 +203,10 @@ typedef struct osdhud_state {
  * argument, the non _z versions use sizeof(xx)
  */
 
-#define assert_strlcpy_z(xx,yy,zz) assert(strlcpy(xx,yy,zz) < zz)
-#define assert_strlcpy(xx,yy) assert_strlcpy_z(xx,yy,sizeof(xx))
-#define assert_strlcat_z(xx,yy,zz) assert(strlcat(xx,yy,zz) < zz)
-#define assert_strlcat(xx,yy) assert_strlcat_z(xx,yy,sizeof(xx))
+#define assert_strlcpy_z(xx,yy,zz)	assert(strlcpy(xx,yy,zz) < zz)
+#define assert_strlcpy(xx,yy)		assert_strlcpy_z(xx,yy,sizeof(xx))
+#define assert_strlcat_z(xx,yy,zz)	assert(strlcat(xx,yy,zz) < zz)
+#define assert_strlcat(xx,yy)		assert_strlcat_z(xx,yy,sizeof(xx))
 #define assert_snprintf_z(xx,zz,ff,...)                                 \
     assert(snprintf(xx,zz,ff,##__VA_ARGS__) < zz)
 #define assert_snprintf(xx,ff,...)                                      \
@@ -265,7 +223,11 @@ typedef struct osdhud_state {
 #define TXT__UNKNOWN_           "-unknown-"
 #define TXT__STUCK_             "-stuck-"
 #define TXT__ALERT_             "-alert-"
-#define TXT__BLINK_             "-blink-"
+#ifdef BLINK
+# define TXT__BLINK_            "-blink-"
+#else
+# define TXT__BLINK_		"hud down in 0"
+#endif
 #define TXT_ALERT_BATTERY_LOW   "BATTERY LOW"
 #define TXT_ALERT_LOAD_HIGH     "HIGH LOAD"
 #define TXT_ALERT_MEM_LOW       "MEMORY PRESSURE"
@@ -275,42 +237,37 @@ typedef struct osdhud_state {
  * statistics for network and disk
  */
 
-void update_net_statistics(
-    osdhud_state_t     *state,
-    unsigned long       delta_ibytes,
-    unsigned long       delta_obytes,
-    unsigned long       delta_ipax,
-    unsigned long       delta_opax);
+void update_net_statistics(struct osdhud_state *state, u_int64_t delta_ibytes,
+			   u_int64_t delta_obytes, u_int64_t delta_ipackets,
+			   u_int64_t delta_opackets);
 
-void update_disk_statistics(
-    osdhud_state_t     *state,
-    unsigned long long  delta_rbytes,
-    unsigned long long  delta_wbytes,
-    unsigned long long  delta_reads,
-    unsigned long long  delta_writes);
+void update_disk_statistics(struct osdhud_state *state, u_int64_t delta_rbytes,
+			    u_int64_t delta_wbytes, u_int64_t delta_reads,
+			    u_int64_t delta_writes);
 
 /*
  * probe_xxx() function prototypes; each os-specific module
  * implements these, e.g. openbsd.c, freebsd.c.
  */
 
-void probe_init(
-    osdhud_state_t     *state);
-void probe_cleanup(
-    osdhud_state_t     *state);
-void probe_load(
-    osdhud_state_t     *state);
-void probe_mem(
-    osdhud_state_t     *state);
-void probe_swap(
-    osdhud_state_t     *state);
-void probe_net(
-    osdhud_state_t     *state);
-void probe_disk(
-    osdhud_state_t     *state);
-void probe_battery(
-    osdhud_state_t     *state);
-void probe_uptime(
-    osdhud_state_t     *state);
+void probe_init(struct osdhud_state *);
+void probe_cleanup(struct osdhud_state *);
+void probe_load(struct osdhud_state *);
+void probe_mem(struct osdhud_state *);
+void probe_swap(struct osdhud_state *);
+void probe_net(struct osdhud_state *);
+/*void probe_disk(struct osdhud_state *);*/ /* XXX not yet */
+void probe_battery(struct osdhud_state *);
+void probe_temperature(struct osdhud_state *);
+void probe_uptime(struct osdhud_state *);
 
-#endif /* __osdhud_h__ */
+void print_temperature_sensors(void); /* exported from per-os as well */
+
+/*
+ * Local variables:
+ * mode: c
+ * c-file-style: "bsd"
+ * tab-width: 8
+ * indent-tabs-mode: t
+ * End:
+ */

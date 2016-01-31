@@ -2,7 +2,7 @@
 
 **N.B.**: Please read [the wiki node](http://traq.haqistan.net/wiki/osdhud) for the most up-to-date information including links to source tarballs
 
-`osdhud` is a heads-up display (hud) for X windows.  It uses the xosd
+`osdhud` is a heads-up display (HUD) for X windows.  It uses the xosd
 library to draw its display over everything else and is designed to be
 trivial to integrate into whatever desktop environment you use.  That
 much said, I use
@@ -10,66 +10,64 @@ much said, I use
 [OpenBSD](http://www.openbsd.org) and find it meshes perfectly with
 the minimalist desktop: no fixed screen real-estate dedicated to
 gauges, widgets or crud.  If you want to know what's going on in your
-machine, hit a key.  If you want to know more there's always
-xterm -e systat :-)
+machine, hit a key.  If you want to know more there's always `xterm -e systat` :-).
 
-At the moment it only is purported to work under OpenBSD.  FreeBSD
-might still work but I have not sat in front of a FreeBSD machine in a
-few months.  Linux is unsupported at the moment but should be
-relatively easy to do if anyone cares.  I guess a MacOSX/iOS port
-could exist but I doubt `osdhud` is shiny enough to attract any
-attention from that crowd...
+At the moment it only works under OpenBSD.  It was originally written
+under FreeBSD but has evolved substantially since then (as, I'm sure,
+has FreeBSD).  Linux is a totally different kettle of fish and is
+unsupported at the moment but should be relatively easy to do if
+anyone cares.
 
 ## Administrivia
 
-I adhere loosely to the [git-flow](http://nvie.com/posts/a-successful-git-branching-model/) concept in my development.  All of the real action happens
-in the branch named `develop`.  The `master` branch should only have
-releases on it, in the form of merges from `develop` and tags.  I don't
-actually use the (supposedly very nice) `git-flow` tool/extension
-in my work.  The repository on github are synced more or less as I do
-things but the one on [traqistan](http://trac.haqistan.net/browser/osdhud)
-is always the most up-to-date.
+The repository on github are synced more or less as I do things but
+the one on [traqistan](http://trac.haqistan.net/browser/osdhud) is
+always the most up-to-date.
 
-Please feel free to [contact me](http://trac.haqistan.net/~attila)
-if you want to collaborate.
+Please feel free to [contact me](http://trac.haqistan.net/~attila) if
+you want to collaborate.
 
 ## Building and Installing
 
-Use the `make.sh` script in the top-level directory to invoke make.  It
-either uses -f BSDmakefile or -f GNUmakefile depending on what the
-native make command says.  Any arguments are passed directly to the
-`make` invocation:
-
+There is a simple `configure` shell script at top level.  It mainly
+fixes up a few things depending on the variety of `make` you have;
+since `osdhud` is still an OpenBSD-only program, this is kind of dumb
+but at some point it might be ported to other BSDs or Linux... who
+knows.  In any event, the sequence is the usual:
 ```
-  $ ./make.sh
-  The following targets are useful:
+  $ ./configure
+  $ make
+  $ doas make install
+```
+
+This will install `osdhud` in `/usr/local/bin/` and `osdhud.1` in
+`/usr/local/man/man1`.  You can specicy an alternate installation
+prefix via the `PREFIX` make variable, e.g.:
+```
+  $ make PREFIX=$HOME install
+```
+will install `osdhud` into `~/bin` and `osdhud.1` into `~/man/man1`.
+
+The `help` target gives a brief usage message for the `Makefile`:
+```
+$ make help
+The following targets are useful:
     help              produce this message
     all               build stuff
     install           install everything but desktop into $(PREFIX)
     clean             clean up temp files
     distclean         clean + reset to virgin state
     dist              cook dist-version.tar.gz tarball
-  Install prefix: /usr/local (override with PREFIX=... on command-line)
+Install prefix: /usr/local (override with PREFIX=... on command-line)
     bin dir:  /usr/local/bin
     man dir:  /usr/local/man
 ```
 
-The default installation prefix is `/usr/local`.  To change this
-specify PREFIX=dir as an argument to build.sh, e.g.
-
-```
-  # Linux (if anyone cares enough for me to port it :-)
-  $ sudo ./make.sh PREFIX=/usr install
-  
-  # To install in ~/bin
-  $ ./make.sh PREFIX=$HOME install
-```
-
-**N.B.** It doesn't work under Linux, the above was just an example.
-
 ## Usage
 
-From the source code (again, please see [the wiki node](http://traq.haqistan.net/wiki/osdhud) for more complete information):
+From the source code (again, please see
+[the wiki node](http://traq.haqistan.net/wiki/osdhud) for more
+complete information):
 
 ```
   The idea is that just running us from a keybinding in the window
@@ -90,10 +88,26 @@ network utilization in the background.  Obviously these statistics get
 better the longer osdhud runs (although at the moment I don't do too
 much of that).  If you want to start osdhud without bringing up the
 display use the `-n` option; this can be useful in your `~/.xinitrc`
-or similar script if you don't want the HUD to flash for a few seconds
-when you start X windows.
+or similar script if you don't want the HUD to come up for a few
+seconds when you start X windows.
 
-More details on the options and usage can be found in the man page.
-The source file is `osdhud.mandoc`.  I run it through my Perl
-`@variable@` expander (`generic/suss.pl`) to get `@VERSION@`
-expanded when `osdhud.1` (the final man page) is generated.
+More details on the options and usage can be found in the man page; I
+keep copies in [pdf](web/osdhud.pdf) and [html](web/osdhud.html)
+synced with the source in OpenBSD's wonderful [mandoc](osdhud.mandoc)
+semantic markup format for documentation.  I run it through my Perl
+`@variable@` expander (`generic/suss.pl`) to get `@VERSION@` expanded
+when `osdhud.1` (the final man page) is generated.
+
+## Screenshot
+
+It seems _de rigueur_ to provide a screenshot:
+
+![osdhud 0.1.6 (not yet released)](web/osdhud-screencap-small.png)
+
+This display was produced by `osdhud -t`, which is why it says
+`[-stuck-]` at bottom left.  Without the `-t` the HUD will come up for
+a few seconds and count down how long it will be visible at bottom
+left instead.
+
+Yeah, my poor little Thinkpad T61 (i386) gets a little hot running
+Firefox... s'ok, keeps me honest.

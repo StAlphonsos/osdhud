@@ -111,8 +111,8 @@ dist: distclean $(DIST_TAR_GZ)
 checkdist: $(DIST_TMP)
 	(cd $(DIST_TMP); ./configure && $(MAKE) $(MFLAGS) && ./osdhud -h && $(MAKE) $(MFLAGS) distclean)
 
-$(DIST_TAR): $(DIST_TMP)
-	$(TAR_CF) $(DIST_TAR) $(DIST_TMP)
+${DIST_TAR}: ${DIST_TMP}
+	tar -cf ${DIST_TAR} ${DIST_TMP}
 
 ${DIST_TAR_GZ}: ${DIST_TAR}
 	${GZIP} ${DIST_TAR}

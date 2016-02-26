@@ -8,6 +8,7 @@
 .Sh SYNOPSIS
 .Nm osdhud
 .Op Fl vkgtknFDUSNCwh?
+.Op Fl G Ar txt
 .Op Fl T Ar fmt
 .Op Fl d Ar msec
 .Op Fl p Ar msec
@@ -135,6 +136,13 @@ the bottom right corner of the screen when enabled.
 Do not display swap statistics.
 .It Fl h Fl ?
 Produce a usage message on stdout and exit.
+.It Fl G Ar txt
+Display an optional message of arbitrary text below the status indicators.
+If
+.Li txt
+is specifed as a single dash the
+.Li stdin
+will be read and displayed on the message line.
 .It Fl T Ar fmt
 Specify a
 .Xr strftime 3

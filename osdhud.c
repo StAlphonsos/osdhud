@@ -21,6 +21,7 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -147,7 +148,7 @@ update_disk_statistics(struct osdhud_state *state, u_int64_t delta_rbytes,
 	}
 }
 
-unsigned long
+u_int64_t
 time_in_microseconds(void)
 {
 	struct timeval tv = { .tv_sec=0, .tv_usec=0 };
@@ -159,10 +160,10 @@ time_in_microseconds(void)
 	return (tv.tv_sec * 1000000) + tv.tv_usec;
 }
 
-unsigned long
+u_int64_t
 time_in_milliseconds(void)
 {
-	unsigned long usecs = time_in_microseconds();
+	u_int64_t usecs = time_in_microseconds();
 
 	return usecs / 1000;
 }
@@ -179,11 +180,11 @@ time_in_milliseconds(void)
  * enough.
  */
 int
-elapsed(char *buf, int bufsiz, unsigned long secs)
+elapsed(char *buf, int bufsiz, u_int64_t secs)
 {
-	unsigned long days;
-	unsigned long hours;
-	unsigned long mins;
+	u_int64_t days;
+	u_int64_t hours;
+	u_int64_t mins;
 	size_t nleft = bufsiz;
 	size_t off = 0;
 
@@ -211,7 +212,7 @@ elapsed(char *buf, int bufsiz, unsigned long secs)
 		}							\
 		if (var == 1) _catsup_u[strlen(#var)-1] = 0;		\
 		_catsup_n = snprintf(					\
-			&buf[off],nleft,"%lu %s",var,_catsup_u);	\
+			&buf[off],nleft,"%llu %s",var,_catsup_u);	\
 		if (_catsup_n >= nleft) {				\
 			off = bufsiz+1;					\
 			goto DONE;					\
@@ -239,7 +240,7 @@ DONE:
 void
 probe(struct osdhud_state *state)
 {
-	unsigned long now = time_in_milliseconds();
+	u_int64_t now = time_in_milliseconds();
 
 	state->delta_t = now - state->last_t;
 	state->last_t = now;
@@ -453,7 +454,7 @@ void
 display_uptime(struct osdhud_state *state)
 {
 	if (state->sys_uptime) {
-		unsigned long secs = state->sys_uptime;
+		u_int64_t secs = state->sys_uptime;
 		char upbuf[64] = { 0 };
 
 		assert_elapsed(upbuf,secs);
@@ -465,21 +466,23 @@ display_uptime(struct osdhud_state *state)
 void
 display_message(struct osdhud_state *state)
 {
-	if (!state->message_seen && state->message[0]) {
+	if (!state->message[0]) {
+		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,"");
+		state->message_seen = 0;
+	} else {
+		if (!state->message_seen)
+			state->message_seen = time_in_milliseconds();
 		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,"%s",
 			     state->message);
-		state->message_seen = 1;
-	} else {
-		xosd_display(osd_to_use(state,0,0),0,XOSD_printf,"");
 	}
 }
 
 void
 display_hudmeta(struct osdhud_state *state)
 {
-	unsigned int now = time_in_milliseconds();
-	unsigned int dt = now - state->t0_msecs;
-	unsigned int left = (dt < state->duration_msecs) ?
+	u_int64_t now = time_in_milliseconds();
+	u_int64_t dt = now - state->t0_msecs;
+	u_int64_t left = (dt < state->duration_msecs) ?
 		state->duration_msecs - dt : 0;
 	unsigned int left_secs = (left + 500) / 1000;
 	xosd *osd = state->osd_bot;
@@ -500,10 +503,7 @@ display_hudmeta(struct osdhud_state *state)
 	}
 
 	if (state->stuck) {
-		char *txt = (state->message[0] && state->alerts_mode) ?
-			TXT__ALERT_ : TXT__STUCK_;
-
-		assert_strlcpy(left_s,txt);
+		assert_strlcpy(left_s,TXT__STUCK_);
 	} else if (state->countdown) {
 		if (left_secs)
 			assert_snprintf(left_s,"hud down in %d",left_secs);
@@ -536,7 +536,7 @@ display(struct osdhud_state *state)
 	display_hudmeta(state);
 }
 
-#define OSDHUD_OPTIONS "d:p:P:vf:s:i:T:X:m:M:knDUSNFCwhgaAt?"
+#define OSDHUD_OPTIONS "d:G:p:P:vf:s:i:T:X:m:M:knDUSNFCwhgaAt?"
 #define USAGE_MSG "usage: %s [-vgtkFDUSNCwh?] [-d msec] [-p msec] [-P msec]\n\
               [-f font] [-s path] [-i iface] [-T fmt] [-m sensor_name] [-M max_temp]\n\
    -v verbose      | -k kill server | -F run in foreground\n\
@@ -544,6 +544,7 @@ display(struct osdhud_state *state)
    -g debug mode   | -t toggle mode | -w don't show swap\n\
    -n don't show HUD on startup     | -C display HUD countdown\n\
    -h,-? display this\n\
+   -G txt   display txt in msg area\n\
    -m name  name of temp. sensor to use (def: first one found)\n\
             to see the available sensors do: -m list\n\
    -M degC  set our idea of the max temperature in degC (def: 100)\n\
@@ -581,6 +582,24 @@ usage(struct osdhud_state *state, char *msg)
 	return fail;
 }
 
+void
+slurp_message_from_stdin(struct osdhud_state *state)
+{
+	char buf[128];
+	int i, n, off, maxread;
+
+	maxread = sizeof(state->message)-1;
+	off = 0;
+	n = read(0, buf, sizeof(buf));
+	while (n > 0) {
+		for (i = 0; i < n; i++)
+			if (isprint(buf[i]) && off < maxread)
+				state->message[off++] = buf[i];
+		state->message[off] = 0;
+		n = (off < maxread) ? read(0, buf, sizeof(buf)) : -1;
+	}
+}
+
 /*
  * Parse command-line arguments into struct osdhud_state structure
  */
@@ -602,6 +621,13 @@ parse(struct osdhud_state *state, int argc, char **argv)
 			if (sscanf(optarg,"%d",&state->display_msecs) != 1)
 				fail = usage(state,"bad value for -d");
 			DBG2("parsed -%c %d",ch,state->display_msecs);
+			break;
+		case 'G':
+			if (!strcmp(optarg,"-"))
+				slurp_message_from_stdin(state);
+			else
+				assert_strlcpy(state->message,optarg);
+			DBG2("parsed -%c %s",ch,state->message);
 			break;
 		case 'p':      /* inter-probe pause in milliseconds */
 			if (sscanf(optarg,"%d",&state->short_pause_msecs) != 1)
@@ -809,6 +835,7 @@ create_state(struct osdhud_state *state)
 		memcpy((void *)&new_state->fld,		\
 		       (void *)&state->fld,		\
 			sizeof(new_state->fld))
+#define str_field(fld) assert_strlcpy(new_state->fld,state->fld)
 
 		set_field(kill_server);
 		set_field(down_hud);
@@ -837,10 +864,12 @@ create_state(struct osdhud_state *state)
 		set_field(display_msecs);
 		set_field(short_pause_msecs);
 		set_field(long_pause_msecs);
+		str_field(message);
 
 #undef cpy_field
 #undef dup_field
 #undef set_field
+#undef str_field
 	}
 	return new_state;
 }
@@ -901,24 +930,55 @@ free_state(struct osdhud_state *dispose)
 int
 split(char *str, char ***out_words)
 {
-	char *copy = NULL;
-	char *toke = NULL;
-	char *splitz[100];
-	char **splits = NULL;
-	int ntoke = 0;
-	int i = 0;
+	char *copy, *toke, *quoting, *new_quoting, *splitz[100], **splits;
+	int ntoke, i, eoq;
 
 	*out_words = NULL;
 	if (!str)
 		return 0;
+	splits = NULL;
 	copy = strdup(str);
 	assert(copy);
 	toke = strsep(&copy,WHITESPACE);
+	new_quoting = quoting = NULL;
+	ntoke = 0;
+	eoq = 0;
 	while (toke && (ntoke < ARRAY_SIZE(splitz))) {
-		splitz[ntoke++] = toke;
+		if (!quoting && toke[0] == '\'') {
+			if (toke[1] == '\'' && toke[2] == 0)
+				splitz[ntoke++] = strdup("");
+			else
+				quoting = strdup(&toke[1]);
+		} else if (quoting) {
+			eoq = (toke[strlen(toke)-1] == '\'') ? 1 : 0;
+			if (eoq)
+				toke[strlen(toke)-1] = '\0';
+			assert(asprintf(&new_quoting,"%s %s",quoting,toke) > 0);
+			free(quoting);
+			quoting = new_quoting;
+			new_quoting = NULL;
+			if (eoq) {
+				splitz[ntoke++] = quoting;
+				quoting = NULL;
+			}
+		} else if (quoting) {
+			assert(asprintf(&new_quoting,"%s %s",quoting,toke) > 0);
+			free(quoting);
+			quoting = new_quoting;
+			new_quoting = NULL;
+		} else {
+			splitz[ntoke++] = toke;
+		}
 		toke = strsep(&copy,WHITESPACE);
 	}
-	if (toke)
+	if (quoting) {
+		if (ntoke < ARRAY_SIZE(splitz))
+			splitz[ntoke++] = quoting;
+		else
+			syslog(LOG_WARNING,
+			       "split too many tokens (> "SIZEOF_F") '%s'",
+			       ARRAY_SIZE(splitz),quoting);
+	} else if (toke)
 		syslog(LOG_WARNING,"split too many tokens (> "SIZEOF_F") '%s'",
 		       ARRAY_SIZE(splitz),str);
 	splits = (char **)calloc(1+ntoke,sizeof(char *));
@@ -1000,7 +1060,6 @@ handle_message(struct osdhud_state *state)
 			struct osdhud_state *foo = create_state(state);
 			size_t msglen = strlen(msg);
 
-			/* The message is just command-line args */
 			if (msglen && (msg[msglen-1] == '\n'))
 				msg[msglen-1] = 0;
 			argc = split(msg,&argv);
@@ -1030,8 +1089,9 @@ handle_message(struct osdhud_state *state)
 				do {					\
 					if (state->verbose)		\
 						syslog(LOG_WARNING,	\
-						       #nn" "ff" => "ff, \
-						       state->nn,foo->nn); \
+						       #nn" "ff" => "ff,\
+						       state->nn,	\
+						       foo->nn);	\
 					state->nn = foo->nn;		\
 				} while(0)
 #define setstrparam(nn)							\
@@ -1044,6 +1104,16 @@ handle_message(struct osdhud_state *state)
 					free(state->nn);		\
 					state->nn = foo->nn ?		\
 						strdup(foo->nn) : NULL; \
+				} while (0)
+#define copystrparam(nn)						\
+				do {					\
+					if (state->verbose)		\
+						syslog(LOG_WARNING,	\
+						       #nn" %s => %s",	\
+						       NULLS(state->nn),\
+						       NULLS(foo->nn)); \
+					assert_strlcpy(			\
+						state->nn,foo->nn);	\
 				} while (0)
 #define is_different(nn) (((state->nn && foo->nn) &&			\
 			   strcmp(state->nn,foo->nn)) ||		\
@@ -1062,7 +1132,7 @@ handle_message(struct osdhud_state *state)
 						cc;			\
 					}				\
 				} while (0)
-				
+
 				/* -k trumps all else */
 				if (foo->kill_server) {
 					state->server_quit = retval = 1;
@@ -1082,10 +1152,12 @@ handle_message(struct osdhud_state *state)
 				setparam(max_temperature,"%f");
 				maybe_setstrparam2(net_iface,
 						   clear_net_info(state));
+				copystrparam(message);
 
 #undef maybe_setstrparam2
 #undef maybe_setstrparam
 #undef is_different
+#undef copystrparam
 #undef setstrparam
 #undef setparam
 				if (foo->toggle_mode) {
@@ -1188,7 +1260,7 @@ check(struct osdhud_state *state)
 	do {
 		struct timeval tout;
 		int x;
-		unsigned long b4;
+		u_int64_t b4;
 		int pause_secs;
 		int pause_usecs;
 		fd_set rfds;
@@ -1214,7 +1286,7 @@ check(struct osdhud_state *state)
 			quit_loop = handle_message(state);
 			if (!quit_loop) {
 				/* client didn't tell us to quit so continue */
-				int dt = time_in_milliseconds() - b4;
+				u_int64_t dt = time_in_milliseconds() - b4;
 
 				/* whittle down the time left */
 				if (dt >= pause_msecs)
@@ -1227,8 +1299,8 @@ check(struct osdhud_state *state)
 			done = 1;
 			if (state->hud_is_up && !state->toggle_mode) {
 				/* if hud is up, see if it is time to down it */
-				int now = time_in_milliseconds();
-				int delta_d = (now - state->t0_msecs);
+				u_int64_t now = time_in_milliseconds();
+				u_int64_t delta_d = (now - state->t0_msecs);
 
 				if (!state->stuck &&
 				    (delta_d >= state->duration_msecs))
@@ -1288,11 +1360,11 @@ pack_message(struct osdhud_state *state, char **out_msg)
 	if (state->stick_hud)
 		len += 3;
 	if (state->font)
-		len += 4 + strlen(state->font);
+		len += 6 + strlen(state->font);
 	if (state->net_iface)
-		len += 4 + strlen(state->net_iface);
+		len += 6 + strlen(state->net_iface);
 	if (state->temp_sensor_name)
-		len += 4 + strlen(state->temp_sensor_name);
+		len += 6 + strlen(state->temp_sensor_name);
 	if (state->max_temperature)
 		len += 10;
 	if (state->pos_x != DEFAULT_POS_X)
@@ -1307,6 +1379,8 @@ pack_message(struct osdhud_state *state, char **out_msg)
 		len += 10;
 	if (state->long_pause_msecs)
 		len += 10;
+	if (state->message[0])
+		len += 6 + strlen(state->message);
 	packed = (char *)malloc(len);
 	memset((void *)packed,0,len);
 	off = 0;
@@ -1339,7 +1413,7 @@ pack_message(struct osdhud_state *state, char **out_msg)
 	} while (0);
 #define string_opt(f,o)                                                 \
 	if (state->f) {							\
-		int x=snprintf(&packed[off],left,"%s-%s %s",lead,o,state->f); \
+		int x=snprintf(&packed[off],left,"%s-%s '%s'",lead,o,state->f); \
 		if (x < 0)						\
 			die(state,"pack: " o " failed !?");		\
 		off += x;						\
@@ -1367,6 +1441,7 @@ pack_message(struct osdhud_state *state, char **out_msg)
 	integer_opt(long_pause_msecs,"P");
 	string_opt(temp_sensor_name,"m");
 	float_opt(max_temperature,"M");
+	string_opt(message,"G");
 
 #undef string_opt
 #undef integer_opt
@@ -1391,7 +1466,7 @@ int kicked(struct osdhud_state *state)
 	struct stat sock_stat;
 
 	if (state->foreground)
-		/* run in foreground - don't even try */
+		/* run in foreground - nothing to kick */
 		return 0;
 	sock_fd = socket(PF_UNIX,SOCK_STREAM,0);
 	if (sock_fd < 0) {
@@ -1679,11 +1754,14 @@ main(int argc, char **argv)
 
 #if 0
 	/*
-	 * Not ready for prime time yet, still looking in to how to
+	 * Not ready for prime time, still looking in to how to
 	 * approach pledging programs like this e.g. systat, which is
 	 * also not pledged yet.  Need to understand where the
-	 * prot_exec is coming from... These pledge calls don't work,
-	 * we die in sysctl somewhere.
+	 * prot_exec is coming from... Anyway, these pledges don't
+	 * work, we die in sysctl somewhere.  There might be something
+	 * to be done in kern_pledge.c to make programs like osdhud,
+	 * systat and vmstat pledgeable, not sure.  Anyway the pledges
+	 * are too broad.  Need to reorder things most likely.
 	 */
 	if (state.foreground) {
 		if (pledge("stdio rpath cpath dpath unix vminfo ps route fattr prot_exec", NULL))

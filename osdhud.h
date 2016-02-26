@@ -73,7 +73,7 @@ struct osdhud_state {
 	u_int64_t	 net_tot_oerr;
 	u_int64_t	 net_tot_ibytes;
 	u_int64_t	 net_tot_obytes;
-	int		 delta_t;
+	u_int64_t	 delta_t;
 	int		 pos_x;
 	int		 pos_y;
 	int		 nlines;
@@ -81,7 +81,7 @@ struct osdhud_state {
 	int		 width;
 	int		 display_msecs;
 	int		 duration_msecs;
-	int		 t0_msecs;
+	u_int64_t	 t0_msecs;
 	int		 short_pause_msecs;
 	int		 long_pause_msecs;
 	int		 net_movavg_wsize;
@@ -111,12 +111,12 @@ struct osdhud_state {
 	int		 battery_missing:1;
 	int		 battery_life;
 	char		 battery_state[32];
-	int		 battery_time;
+	u_int64_t	 battery_time;
 	time_t		 uptime_secs;
-        time_t		 last_t;
-	time_t		 first_t;
-	time_t		 sys_uptime;
-	int		 message_seen:1;
+        u_int64_t	 last_t;
+	u_int64_t	 first_t;
+	u_int64_t	 sys_uptime;
+	u_int64_t	 message_seen;
 	char		 message[MAX_ALERTS_SIZE];
 	xosd		*osds[NLINES];
 	int		 disp_line;
@@ -127,9 +127,9 @@ struct osdhud_state {
 #define KILO 1024
 #define MEGA (KILO*KILO)
 #define OSDHUD_MAX_MSG_SIZE 2048
-/* XXX this introduces a dep on fonts/terminus; default should be in base */
-#define DEFAULT_FONT "-xos4-terminus-medium-r-normal--32-320-72-72-c-160-iso8859-1"
-/*#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"*/
+/* XXX this introduces a dep on fonts/terminus-font; def. should be in base */
+/*#define DEFAULT_FONT "-xos4-terminus-medium-r-normal--32-320-72-72-c-160-iso8859-1"*/
+#define DEFAULT_FONT "-adobe-helvetica-bold-r-normal-*-*-320-*-*-p-*-*-*"
 #define DEFAULT_POS_X 10
 #define DEFAULT_POS_Y 48
 #define DEFAULT_LINE_HEIGHT 36
@@ -144,7 +144,7 @@ struct osdhud_state {
 #define DEFAULT_MIN_BATTERY_LIFE 10
 #define DEFAULT_MAX_LOAD_AVG 0.0
 #define DEFAULT_MAX_MEM_USED 0.9
-#define DEFAULT_MAX_TEMPERATURE 120
+#define DEFAULT_MAX_TEMPERATURE 100
 
 #define DBG1(fmt,arg1)                                                  \
     if (state->debug) {                                                 \

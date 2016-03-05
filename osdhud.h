@@ -111,7 +111,7 @@ struct osdhud_state {
 	int		 battery_missing:1;
 	int		 battery_life;
 	char		 battery_state[32];
-	u_int64_t	 battery_time;
+	int		 battery_time;
 	time_t		 uptime_secs;
         u_int64_t	 last_t;
 	u_int64_t	 first_t;
@@ -134,7 +134,7 @@ struct osdhud_state {
 #define DEFAULT_POS_Y 48
 #define DEFAULT_LINE_HEIGHT 36
 #define DEFAULT_WIDTH 50
-#define DEFAULT_DISPLAY 2000
+#define DEFAULT_DISPLAY 4000
 #define DEFAULT_SHORT_PAUSE 80
 /*#define DEFAULT_LONG_PAUSE 1800*/
 #define DEFAULT_LONG_PAUSE DEFAULT_SHORT_PAUSE
